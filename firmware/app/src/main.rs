@@ -13,6 +13,7 @@ use tinyrlibc as _;
 mod light;
 mod matter;
 mod output;
+mod storage;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 

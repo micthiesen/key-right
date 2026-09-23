@@ -14,3 +14,7 @@ cd firmware/app
 cargo fmt --check
 cargo clippy --all-targets --features bench-light --locked -- -D warnings
 cargo build --release --features bench-light --locked
+
+# Production-capable adapter, still physically gated by a commissioned profile.
+cargo clippy --bin key-right --features hardware-light --locked -- -D warnings
+cargo build --release --bin key-right --features hardware-light --locked

@@ -3,14 +3,10 @@
 
 use core::fmt::Write as _;
 
-use embassy_embedded_hal::adapter::BlockingAsync;
 use embassy_time::{Duration, Timer};
-use esp_bootloader_esp_idf::partitions::{
-    read_partition_table, DataPartitionSubType, PartitionType, PARTITION_TABLE_MAX_LEN,
-};
+use esp_bootloader_esp_idf::partitions::PARTITION_TABLE_MAX_LEN;
 use esp_hal::peripherals::{ADC1, BT, FLASH, RNG, WIFI};
 use esp_hal::rng::{Trng, TrngSource};
-use esp_storage::FlashStorage;
 use heapless::String;
 use rs_matter_embassy::matter::crypto::{default_crypto, Crypto};
 use rs_matter_embassy::matter::dm::clusters::app::on_off;
@@ -20,17 +16,16 @@ use rs_matter_embassy::matter::dm::clusters::identify;
 use rs_matter_embassy::matter::dm::devices::test::{DAC_PRIVKEY, TEST_DEV_ATT, TEST_PID, TEST_VID};
 use rs_matter_embassy::matter::dm::devices::DEV_TYPE_ON_OFF_LIGHT;
 use rs_matter_embassy::matter::dm::{Async, Dataver, EmptyHandler, Endpoint, EpClMatcher, Node};
-use rs_matter_embassy::matter::error::{Error, ErrorCode};
-use rs_matter_embassy::matter::persist::{KvBlobStore, KV_BUF_SIZE, VENDOR_KEYS_START};
+use rs_matter_embassy::matter::error::Error;
 use rs_matter_embassy::matter::utils::init::InitMaybeUninit;
 use rs_matter_embassy::matter::{clusters, devices, BasicCommData};
-use rs_matter_embassy::persist::SeqMapKvBlobStore;
 use rs_matter_embassy::stack::rand::reseeding_csprng;
 use rs_matter_embassy::wireless::esp::EspWifiDriver;
 use rs_matter_embassy::wireless::{EmbassyWifi, EmbassyWifiMatterStack};
 use static_cell::StaticCell;
 
 use crate::light::{self, BenchLight};
+use crate::storage::{commissioning_passcode, persistent_store};
 
 // Large objects are initialized in place so no temporary overflows the task stack.
 macro_rules! mk_static {
@@ -42,7 +37,6 @@ macro_rules! mk_static {
 
 const BUMP_SIZE: usize = 20_000;
 const LIGHT_ENDPOINT: u16 = 1;
-const COMMISSIONING_KEY: u16 = VENDOR_KEYS_START;
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 const NODE: Node = Node {
@@ -184,59 +178,4 @@ async fn halted(reason: &str, error: Error) -> ! {
         log::error!("Matter unavailable: {reason}: {error:?}; repair then reboot");
         Timer::after(Duration::from_secs(30)).await;
     }
-}
-
-fn persistent_store<'d>(
-    flash: FLASH<'d>,
-    buf: &mut [u8; PARTITION_TABLE_MAX_LEN],
-) -> Result<impl KvBlobStore + 'd, Error> {
-    let mut flash = FlashStorage::new(flash);
-    let table = read_partition_table(&mut flash, buf).map_err(|_| ErrorCode::InvalidData)?;
-    let nvs = table
-        .find_partition(PartitionType::Data(DataPartitionSubType::Nvs))
-        .map_err(|_| ErrorCode::InvalidData)?
-        .ok_or(ErrorCode::NotFound)?;
-    let range = nvs.offset()..nvs.offset() + nvs.len();
-    log::info!("Matter NVS: {:#x}..{:#x}", range.start, range.end);
-    Ok(SeqMapKvBlobStore::new(BlockingAsync::new(flash), range))
-}
-
-/// One credential per fresh NVS, generated from entropy rather than a MAC or public test PIN.
-fn commissioning_passcode(store: &mut impl KvBlobStore, trng: &Trng) -> Result<u32, Error> {
-    // Compaction may move Matter records as well as this four-byte credential.
-    let mut buf = [0; KV_BUF_SIZE];
-    if let Some(data) = store.load(COMMISSIONING_KEY, &mut buf)? {
-        let bytes: [u8; 4] = data.try_into().map_err(|_| ErrorCode::InvalidData)?;
-        let passcode = u32::from_le_bytes(bytes);
-        return valid_passcode(passcode)
-            .then_some(passcode)
-            .ok_or_else(|| ErrorCode::InvalidData.into());
-    }
-
-    let passcode = loop {
-        // Rejection sampling is uniform over permitted Matter passcodes.
-        let candidate = trng.random() & 0x07ff_ffff;
-        if valid_passcode(candidate) {
-            break candidate;
-        }
-    };
-    store.store(COMMISSIONING_KEY, &passcode.to_le_bytes(), &mut buf)?;
-    Ok(passcode)
-}
-
-fn valid_passcode(value: u32) -> bool {
-    (1..=99_999_998).contains(&value)
-        && !matches!(
-            value,
-            11_111_111
-                | 22_222_222
-                | 33_333_333
-                | 44_444_444
-                | 55_555_555
-                | 66_666_666
-                | 77_777_777
-                | 88_888_888
-                | 12_345_678
-                | 87_654_321
-        )
 }

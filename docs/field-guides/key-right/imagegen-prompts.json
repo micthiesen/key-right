@@ -1,0 +1,9 @@
+{
+  "tool": "built-in image_gen",
+  "generated": "2026-09-23",
+  "asset": "assets/probing-technique.png",
+  "role": "Generic technique illustration only, never evidence for this board's pins or circuit",
+  "prompt": "Use case: scientific-educational. Asset type: small instructional technique panel for a black-and-white electronics field guide printed on US Letter. Create one clean wide horizontal illustration on pure white, three equal simple panels, crisp black line art, minimal gray shading, generous whitespace, no border touching edges. Panel 1 depicts a generic small circuit board on an insulated work mat with BOTH a USB plug and a DC barrel plug visibly disconnected and separated from their matching sockets. Short exact label above: UNPLUG BOTH. Panel 2 is a close-up of a multimeter probe showing insulating heat-shrink over almost the entire metal shaft, leaving only a tiny pointed metal tip exposed. Short exact label above: COVER THE SHAFT. Panel 3 depicts a fine multimeter probe touching a single generic solder pad while a separate ground clip stays attached to a larger ground pad; this is a continuity test on an UNPOWERED simple board, with no power cables connected. Short exact label above: ONE PAD AT A TIME. This is a generic technique illustration, not a specific product or circuit diagram. Do not depict an exact chip pin count or invented component labels. Avoid realistic complex traces, extra probe tips, sparks, glowing circuits, shading that will obscure shapes in monochrome, and any other words. Landscape approximately 3:1 aspect ratio.",
+  "corrections": [],
+  "review": "Labels correct; both power plugs disconnected; generic probe insulation and separate ground clip visible. Do not use the illustrated generic USB connector as the XIAO pinout."
+}
