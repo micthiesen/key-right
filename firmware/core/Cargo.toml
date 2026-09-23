@@ -1,0 +1,10 @@
+[package]
+name = "key-right-core"
+description = "Portable light control for the Key Right ESP32 replacement"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

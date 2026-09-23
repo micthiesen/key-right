@@ -1,0 +1,13 @@
+[package]
+name = "key-right-bench-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+key-right-core = { path = "../../core" }
+rs-matter = { version = "=0.2.0", default-features = false, features = ["std", "rustcrypto", "log"] }
+embassy-time = { version = "0.5", features = ["std", "generic-queue-8"] }
+log = "0.4"

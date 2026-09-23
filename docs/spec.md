@@ -9,12 +9,12 @@ The original lights currently need approximately daily power cycles. Reliability
 ## Locked decisions
 
 - Remove/desolder the Dexatek module. The user is comfortable doing this. Do not make reverse-engineering or reflashing the Realtek firmware the implementation path.
-- Use an ESP32-family development board. The exact board is not selected.
+- Use an ESP32-family development board. The initial Matter build targets ESP32-C6 to reuse Stillair's setup; the exact board is not selected.
 - Write the custom application firmware in Rust. Vendor libraries or C bindings are acceptable where needed; a pure-Rust radio stack is not required.
 - The external supply is **13 V DC, rated 4 A**. The user will use a **buck converter board to power the ESP**. This is decided, not an alternative awaiting approval. Match its regulated output to the chosen dev board's supported power input.
 - Normal light output is **3% brightness**. The replacement uses a fixed brightness, with no user-facing brightness slider required.
 - Provide on/off and **two colour-temperature presets**. The two temperatures remain to be supplied or recovered from existing settings.
-- Prefer direct HomeKit integration. A simple local API plus a Homebridge plugin is an explicitly accepted implementation choice if it better serves reliability and maintainability.
+- Use Matter over Wi-Fi with BLE commissioning, reusing the Rust connectivity setup in `../stillair`, for direct Apple Home access. This supersedes the original direct-HAP/Homebridge options.
 - Use prior firmware research as reference material rather than directly forking that firmware project.
 - No cloud dependency for ordinary operation.
 
@@ -24,7 +24,10 @@ The intended implementation is the complete working replacement, including hardw
 
 Physical soldering, connecting hardware, and other tasks the agent cannot perform require coordination with the user. Batch these into concrete instructions based on evidence. Do not invent pinouts or present unresolved electrical details as verified facts. The user declined manual continuity mapping during the initial discussion; prefer existing documentation, visual tracing, and evidence obtainable by the agent. If physical evidence is indispensable, explain exactly what remains unknown rather than guessing.
 
-The current request authorizes only creation of this documentation/reference folder. Do not initialize a Rust project, install tools, flash devices, or begin hardware changes as part of this documentation task.
+The initial documentation-only task is complete. The subsequent setup request
+authorizes Rust project scaffolding, verification, commit, and push. The current
+baseline and outstanding firmware/hardware integration are recorded in
+[development.md](development.md).
 
 ## Hardware architecture
 
@@ -34,7 +37,7 @@ The current request authorizes only creation of this documentation/reference fol
 
 ESP32 -> I2C -> existing PCA9635 -> existing output circuitry
       -> output-enable control if required by the board
-      -> Wi-Fi -> Apple Home directly, or local API/Homebridge
+      -> Matter over Wi-Fi -> Apple Home
 USB   -> development host for flashing, logs, and recovery
 ```
 
@@ -68,11 +71,18 @@ Four two-pin LED connectors were disconnected by the user. They can remain disco
 - Include useful diagnostics: firmware identity, uptime, reset reason, Wi-Fi status/RSSI, reconnect counters, last failure, and recovery history. Keep secrets out of logs.
 - Make firmware updates and failed-build recovery practical through the dev board's USB path. OTA can be added if useful but is not a substitute for recovery access.
 
-## HomeKit integration
+## Apple Home integration
 
-Direct HomeKit is preferred if the selected implementation supports robust pairing, retained credentials, discovery, event delivery, reconnects, and the chosen Rust/ESP platform. Assess actual library support rather than assuming a desktop Rust HAP implementation works on the MCU.
+Reuse Stillair's `rs-matter-embassy` stack on ESP32-C6: BLE commissioning, Matter
+over Wi-Fi, flash-backed fabrics/network state, and USB commissioning logs. The
+user selected this path on 2026-09-23. Use the compatible dependency revisions
+from that project and adapt its device identity and endpoint handlers for lights.
 
-The accepted alternative is a small local API and a Homebridge plugin. There is already a user-maintained Elgato Homebridge fork; inspect its suitability before deciding whether to reuse/adapt it. A small compatible API may reduce integration work, but full Elgato API emulation is not required.
+Stillair's own records include Apple Home commissioning and cold-boot restoration;
+they do not establish that Key Right passes any hardware or recovery test. Bring
+over the connectivity and persistence, then verify discovery, event delivery,
+reconnects, and fault recovery here. The earlier Homebridge fork remains background
+reference and is not a dependency of this implementation.
 
 Expose the two presets in a clear Apple Home interaction. Preserve fixed brightness regardless of incidental brightness writes from an integration. Both lights must have distinct stable identities and independently recover from failures.
 
@@ -87,7 +97,7 @@ The useful test harness comprises:
 - Timestamped device logs and host-side connection/API observations.
 - An independently controlled power switch if full power-cycle testing is needed.
 - Physical observation of output, using a sensor or a camera with fixed exposure/white balance. A suitable faster sensor is needed if brief flashes cannot be resolved by the camera.
-- A test HomeKit controller or Homebridge instance, plus validation in the user's actual Apple Home environment.
+- A test Matter controller, plus validation in the user's actual Apple Home environment.
 
 These describe capabilities, not an approved shopping list. Select concrete equipment around available hardware when implementation begins.
 
@@ -96,7 +106,7 @@ These describe capabilities, not an approved shopping list. Select concrete equi
 1. **Hardware control:** establish communication with the retained driver and prove on/off, both presets, and fixed brightness on the real LEDs. Record channel mapping, polarity, and resulting configuration.
 2. **Safe startup/output:** observe cold boot, controller reset, firmware restart, and recovery. No unexpected full-brightness pulse or uncontrolled output. Document any unavoidable interruption.
 3. **Wi-Fi failure injection:** repeatedly interrupt the AP, reject/drop traffic, renew/change DHCP addressing, and restore service. The light must reconnect and become controllable without touching it or re-pairing.
-4. **Integration recovery:** restart Homebridge if used, restart/disconnect controllers, and interrupt discovery/event connections. Restore correct state and control without duplicate accessories or stale state.
+4. **Integration recovery:** restart/disconnect Matter controllers and interrupt discovery/event connections. Restore correct state and control without duplicate accessories or stale state.
 5. **Resource resilience:** exercise repeated commands, connection churn, malformed requests where applicable, and prolonged outages. Show bounded resource use and recovery without an accumulating leak or deadlock.
 6. **Watchdog/recovery:** deliberately stall the application or trigger a controlled fault. Verify recovery and diagnostics. Verify the host can restore a known-good build when application firmware cannot communicate.
 7. **Real-environment operation:** verify pairing, both presets, on/off, and recovery through the user's actual Apple Home setup, with both lights when converted.

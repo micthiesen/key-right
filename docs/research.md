@@ -74,3 +74,17 @@ The [latest listed original Key Light firmware](https://help.elgato.com/hc/en-us
 The user maintains [@micthiesen/homebridge-elgato-key-lights](https://github.com/micthiesen/homebridge-elgato-key-lights). Prior saved notes report version 1.1.0 with independent device supervisors, retry/backoff, HTTP deadlines, unavailable-state handling, and stable accessory identity. Publication and simulated recovery tests were recorded previously; installation of that fork on Boris and real HomeKit operation were not verified in this session.
 
 This may be a useful integration starting point for an ESP local API. It cannot repair a hung radio in the old light and is not evidence that the replacement's recovery requirements already pass.
+
+## Selected Matter implementation
+
+Updated 2026-09-23: the user selected reuse of `../stillair`'s Matter connectivity.
+This replaces the earlier direct-HAP/Homebridge evaluation path. The source snapshot
+is Stillair commit `af12fec55430b4af7704dd89636bdd102a0c4158`, particularly
+`firmware/app/src/matter.rs`, `firmware/app/src/output.rs`, its Cargo manifest,
+lockfile, and RISC-V target configuration.
+
+Stillair uses ESP32-C6, `rs-matter-embassy`, concurrent BLE commissioning and Wi-Fi,
+hardware-seeded randomness, and an NVS partition discovered from the flash partition
+table. Keep its dependency revisions together when adapting the stack. Its fan
+handler and motor GPIO configuration do not apply to Key Right. See
+[development.md](development.md) for the port's scope and remaining validation.

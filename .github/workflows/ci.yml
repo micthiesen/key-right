@@ -1,0 +1,19 @@
+name: Rust
+on: [push, pull_request]
+permissions:
+  contents: read
+
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - run: sh scripts/check.sh
+
+  esp32c6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy --target riscv32imac-unknown-none-elf
+      - run: sh scripts/check-firmware.sh

@@ -1,0 +1,6 @@
+[target.riscv32imac-unknown-none-elf]
+runner = "espflash flash --monitor --partition-table partitions.csv"
+rustflags = ["-C", "link-arg=-Tlinkall.x"]
+
+[build]
+target = "riscv32imac-unknown-none-elf"
