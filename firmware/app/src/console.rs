@@ -1,12 +1,11 @@
 //! Bounded newline-delimited local USB protocol. No network debug endpoint.
-use crate::protocol::decode_profile;
 use crate::runtime::{Hardware, Runtime};
 use core::fmt::Write as _;
 use embedded_io_async::Read as _;
 use esp_hal::usb::usb_serial_jtag::UsbSerialJtagRx;
 use esp_hal::Async;
 use heapless::String;
-use key_right_core::{LightState, Preset};
+use key_right_core::Preset;
 use rs_matter_embassy::matter::persist::KvBlobStoreAccess;
 
 pub async fn run<K: KvBlobStoreAccess, H: Hardware>(
@@ -32,8 +31,8 @@ pub async fn run<K: KvBlobStoreAccess, H: Hardware>(
                 if overflow {
                     let _ = reply.push_str("KR ERR line_too_long");
                 } else if line.trim() == "reboot" {
-                    runtime.isolate();
-                    let _ = reply.push_str("KR OK rebooting intent_preserved=true");
+                    let off_verified = runtime.prepare_reboot();
+                    let _ = write!(reply, "KR OK rebooting intent_preserved=true off_registers_verified={off_verified}");
                     crate::output::response_and_flush(reply).await;
                     esp_hal::system::software_reset();
                 } else if line.trim() == "test watchdog" {
@@ -45,7 +44,7 @@ pub async fn run<K: KvBlobStoreAccess, H: Hardware>(
                             crate::output::response_and_flush(reply).await;
                             // This console and the watchdog-feeding maintenance future
                             // share one thread-mode task. Deliberately stop polling it;
-                            // LEDC retains its last verified duty until the system reset.
+                            // The PCA retains its last PWM state during this stall.
                             loop {
                                 core::hint::spin_loop();
                             }
@@ -92,9 +91,9 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             let s = runtime.snapshot();
             let (attempts, timeouts, restarts, connected) = crate::network::metrics();
             let (rssi, local_ready, ipv4_ready, ip_timeouts) = crate::network::local_metrics();
-            let _=write!(out,"KR OK mode=hardware firmware={} identity=KR-{} uptime_ms={} reset={:?} intended_on={} intended_preset={} acknowledged={:?} fault={:?} configured={} output_failures={} storage_failures={} recoveries={} wifi_connected={} rssi_dbm={:?} local_ip_ready={} ipv4_ready={} wifi_attempts={} wifi_timeouts={} ip_timeouts={} wifi_restarts={} usb_dropped={} physical_output=unmeasured",
+            let _=write!(out,"KR OK mode=hardware firmware={} identity=KR-{} uptime_ms={} reset={:?} intended_on={} intended_preset={} acknowledged={:?} fault={:?} output_failures={} storage_failures={} recoveries={} wifi_connected={} rssi_dbm={:?} local_ip_ready={} ipv4_ready={} wifi_attempts={} wifi_timeouts={} ip_timeouts={} wifi_restarts={} usb_dropped={} physical_output=unmeasured",
                 env!("CARGO_PKG_VERSION"),esp_hal::efuse::base_mac_address(),embassy_time::Instant::now().as_millis(),esp_hal::system::reset_reason(),
-                s.intended.on,if s.intended.preset==Preset::One {1}else{2},s.applied,s.fault,s.configured,s.output_failures,s.storage_failures,s.recoveries,
+                s.intended.on,if s.intended.preset==Preset::One {1}else{2},s.applied,s.fault,s.output_failures,s.storage_failures,s.recoveries,
                 connected,rssi,local_ready,ipv4_ready,attempts,timeouts,ip_timeouts,restarts,crate::output::dropped());
             return;
         }
@@ -103,55 +102,25 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             runtime.set_endpoint(if p == "1" { Preset::One } else { Preset::Two }, true)
         }
         ("verify", [None, None, None]) => runtime.verify(),
-        ("outputs", [None, None, None]) => {
-            let p = runtime.outputs();
-            let _=write!(out,"KR OK backend=esp32_ledc warm_command_q4={} cool_command_q4={} warm_active_q4={} cool_active_q4={} duty_bits={} divider_q8={} clock_hz={} translator_oe={} physical_output=unmeasured",p.warm_command,p.cool_command,p.warm_active,p.cool_active,p.duty_bits,p.divider_q8,p.clock_hz,p.enabled);
-            return;
-        }
-        ("registers", [None, None, None]) => {
-            let _ = out.push_str("KR ERR no_PCA_bus_use_outputs");
-            return;
-        }
-        ("profile", [Some("show"), None, None]) => {
-            let _ = out.push_str("KR OK ");
-            for (name, p) in [("active", runtime.profile()), ("staged", runtime.staged())] {
-                let _ = write!(out, "{name}=");
-                if let Some(p) = p {
-                    for b in p.encode() {
-                        let _ = write!(out, "{b:02x}");
+        ("registers" | "outputs", [None, None, None]) => {
+            match runtime.registers() {
+                Ok(registers) => {
+                    let _ = out.push_str("KR OK backend=pca9635 address=0x15 registers=");
+                    for byte in registers {
+                        let _ = write!(out, "{byte:02x}");
                     }
-                } else {
-                    let _ = out.push_str("none");
+                    let _ = out.push_str(" physical_output=unmeasured");
                 }
-                let _ = out.push(' ');
+                Err(e) => {
+                    let _ = write!(out, "KR ERR {:?}", e.code());
+                }
             }
             return;
         }
-        ("profile", [Some("stage"), Some(hex), None]) => match decode_profile(hex) {
-            Ok(p) => runtime.stage(p),
-            Err(e) => {
-                let _ = write!(out, "KR ERR {e}");
-                return;
-            }
-        },
-        ("profile", [Some("attest"), Some(bits), None]) => match bits.parse::<u8>() {
-            Ok(bits) => runtime.attest(bits),
-            Err(_) => {
-                let _ = out.push_str("KR ERR attest_requires_decimal_0_to_15");
-                return;
-            }
-        },
-        ("profile", [Some("test"), Some(p @ ("off" | "1" | "2")), None]) => {
-            runtime.test(LightState {
-                on: p != "off",
-                preset: if p == "2" { Preset::Two } else { Preset::One },
-            })
-        }
-        ("profile", [Some("commit"), None, None]) => runtime.commit(),
+        ("on1", [None, None, None]) => runtime.set_endpoint(Preset::One, true),
+        ("on2", [None, None, None]) => runtime.set_endpoint(Preset::Two, true),
         ("commissioning", [Some("code"), None, None]) => {
-            if runtime.profile().is_none() {
-                let _ = out.push_str("KR ERR commit_profile_first");
-            } else if let Err(e) = open_commissioning() {
+            if let Err(e) = open_commissioning() {
                 let _ = write!(out, "KR ERR commissioning_window_{:?}", e.code());
             } else {
                 let _ = write!(out, "KR OK pairing_code={pairing}");
@@ -159,7 +128,7 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             return;
         }
         _ => {
-            let _=out.push_str("KR ERR commands=status|off|on_1_or_2|verify|outputs|profile_stage_show_test_attest_commit|commissioning_code|reboot|test_watchdog");
+            let _=out.push_str("KR ERR commands=status|off|on_1_or_2|verify|registers|commissioning_code|reboot|test_watchdog");
             return;
         }
     };

@@ -36,32 +36,3 @@ fn invalid_commands_fail_before_starting_a_session() {
         assert!(!output.stderr.is_empty());
     }
 }
-
-#[test]
-fn stock_profile_is_inspectable_but_not_commissioned() {
-    let output = Command::new(env!("CARGO_BIN_EXE_key-right"))
-        .args(["profile", "stock"])
-        .output()
-        .unwrap();
-    assert!(output.status.success());
-    let hex = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(hex.trim().len(), 160);
-    let inspect = Command::new(env!("CARGO_BIN_EXE_key-right"))
-        .args(["profile", "inspect", hex.trim()])
-        .output()
-        .unwrap();
-    assert!(inspect.status.success());
-    let description = String::from_utf8(inspect.stdout).unwrap();
-    assert!(description.contains("address=0x15 mode2=0x14"));
-    assert!(description.contains("preset_mired=[303, 200] attestations=0 commissioned=false"));
-    let mut damaged = hex.trim().to_owned();
-    damaged.replace_range(30..31, "f");
-    let inspect = Command::new(env!("CARGO_BIN_EXE_key-right"))
-        .args(["profile", "inspect", &damaged])
-        .output()
-        .unwrap();
-    assert_eq!(inspect.status.code(), Some(2));
-    assert!(String::from_utf8(inspect.stderr)
-        .unwrap()
-        .contains("Checksum"));
-}

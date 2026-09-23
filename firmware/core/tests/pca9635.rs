@@ -1,54 +1,29 @@
+use key_right_core::pca9635::{
+    stock_frame, Delay, DriverError, OutputEnable, Pca9635, RegisterBus, ADDRESS, MODE2,
+    TEMPERATURES_MIRED,
+};
+use key_right_core::{Command, Controller, LightOutput, LightState, Preset};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use key_right_core::pca9635::{
-    crc16, Delay, DriverError, Frame, OutputGate, Pca9635, Profile, ProfileError, RegisterBus,
-    FRAME_LEN, REQUIRED_ATTESTATIONS,
-};
-use key_right_core::{Command, Controller, LightOutput, LightState, Preset};
-
-fn profile(attestations: u8) -> Profile {
-    let mut off = [0; FRAME_LEN];
-    off[16] = 255;
-    off[18..].fill(0xaa);
-    let mut one = off;
-    one[0] = 4;
-    one[4] = 2;
-    let mut two = off;
-    two[0] = 1;
-    two[4] = 5;
-    // Deliberately synthetic fixture, never a production calibration.
-    Profile::new(
-        0x15,
-        0x14,
-        [303, 200],
-        [Frame(off), Frame(one), Frame(two)],
-        attestations,
-    )
-    .unwrap()
-}
-
 #[derive(Debug, PartialEq)]
 enum Event {
-    Gate(bool),
+    Oe(bool),
     Write(Vec<u8>),
     Read,
     Delay(u32),
 }
-
 #[derive(Default)]
 struct Hardware {
     registers: [u8; 24],
     events: Vec<Event>,
     fail_at: Option<usize>,
     operations: usize,
+    fail_bus: bool,
     corrupt_read: bool,
-    disabled: bool,
 }
-
 #[derive(Clone)]
 struct Mock(Rc<RefCell<Hardware>>);
-
 impl Mock {
     fn step(h: &mut Hardware) -> Result<(), &'static str> {
         let operation = h.operations;
@@ -60,23 +35,28 @@ impl Mock {
         }
     }
 }
-
 impl RegisterBus for Mock {
     type Error = &'static str;
     fn write(&mut self, address: u8, bytes: &[u8]) -> Result<(), Self::Error> {
-        assert_eq!(address, 0x15);
+        assert_eq!(address, ADDRESS);
         let mut h = self.0.borrow_mut();
         h.events.push(Event::Write(bytes.to_vec()));
         Self::step(&mut h)?;
+        if h.fail_bus {
+            return Err("bus unavailable");
+        }
         let start = usize::from(bytes[0] & 0x1f);
         h.registers[start..start + bytes.len() - 1].copy_from_slice(&bytes[1..]);
         Ok(())
     }
     fn write_read(&mut self, address: u8, bytes: &[u8], out: &mut [u8]) -> Result<(), Self::Error> {
-        assert_eq!((address, bytes), (0x15, &[0x80][..]));
+        assert_eq!((address, bytes), (ADDRESS, &[0x80][..]));
         let mut h = self.0.borrow_mut();
         h.events.push(Event::Read);
         Self::step(&mut h)?;
+        if h.fail_bus {
+            return Err("bus unavailable");
+        }
         out.copy_from_slice(&h.registers);
         out[0] |= 0x80;
         if h.corrupt_read {
@@ -85,177 +65,96 @@ impl RegisterBus for Mock {
         Ok(())
     }
 }
-
-impl OutputGate for Mock {
+impl OutputEnable for Mock {
     type Error = &'static str;
     fn set_disabled(&mut self, disabled: bool) -> Result<(), Self::Error> {
         let mut h = self.0.borrow_mut();
-        h.events.push(Event::Gate(disabled));
-        Self::step(&mut h)?;
-        h.disabled = disabled;
-        Ok(())
+        h.events.push(Event::Oe(disabled));
+        Self::step(&mut h)
+        // No physical effect: models the permitted OE-tied-low installation.
     }
 }
-
 impl Delay for Mock {
     fn delay_us(&mut self, micros: u32) {
         self.0.borrow_mut().events.push(Event::Delay(micros));
     }
 }
-
 fn fixture() -> (Rc<RefCell<Hardware>>, Pca9635<Mock, Mock, Mock>) {
     let h = Rc::new(RefCell::new(Hardware::default()));
-    let driver = Pca9635::new(
-        Mock(h.clone()),
-        Mock(h.clone()),
-        Mock(h.clone()),
-        profile(15),
-    );
+    let driver = Pca9635::new(Mock(h.clone()), Mock(h.clone()), Mock(h.clone()));
     (h, driver)
 }
-
 #[test]
-fn profile_roundtrip_and_every_single_bit_corruption_is_rejected() {
-    let expected = profile(REQUIRED_ATTESTATIONS);
-    let bytes = expected.encode();
-    assert_eq!(Profile::decode(&bytes), Ok(expected));
-    assert_eq!(crc16(b"123456789"), 0x29b1);
-    for i in 0..bytes.len() {
-        for bit in 0..8 {
-            let mut corrupt = bytes;
-            corrupt[i] ^= 1 << bit;
-            assert!(Profile::decode(&corrupt).is_err(), "byte {i}, bit {bit}");
-        }
-    }
-    assert_eq!(Profile::decode(&bytes[..79]), Err(ProfileError::Length));
-}
-
-#[test]
-fn stock_candidate_preserves_real_wrapper_warm_cool_order() {
-    let p = Profile::stock_candidate();
-    assert_eq!((p.address(), p.mode2()), (0x15, 0x14));
-    assert_eq!(p.temperatures_mired(), [303, 200]);
-    assert_eq!((p.frames()[1].0[0], p.frames()[1].0[4]), (6, 2));
-    assert_eq!((p.frames()[2].0[0], p.frames()[2].0[4]), (3, 6));
-    for frame in p.frames() {
-        assert_eq!(&frame.0[18..], &[0xaa; 4]);
-        for channel in 0..16 {
+fn stock_frames_preserve_wrapper_channel_order_and_nominal_three_percent() {
+    assert_eq!(
+        (ADDRESS, MODE2, TEMPERATURES_MIRED),
+        (0x15, 0x14, [303, 200])
+    );
+    for (state, pair) in [
+        (LightState::default(), [0, 0]),
+        (
+            LightState {
+                on: true,
+                preset: Preset::One,
+            },
+            [6, 2],
+        ),
+        (
+            LightState {
+                on: true,
+                preset: Preset::Two,
+            },
+            [3, 6],
+        ),
+    ] {
+        let frame = stock_frame(state);
+        assert_eq!([frame[0], frame[4]], pair);
+        assert_eq!(&frame[16..], &[255, 0, 0xaa, 0xaa, 0xaa, 0xaa]);
+        for (channel, duty) in frame[..16].iter().enumerate() {
             if channel != 0 && channel != 4 {
-                assert_eq!(frame.0[channel], 0);
+                assert_eq!(*duty, 0);
             }
         }
     }
-    assert_eq!(p.attestations(), 0);
-    assert!(p.require_commissioned().is_err());
-    assert_eq!(p.stock_pwm_duties(LightState::default()), Ok([0, 0]));
-    assert_eq!(
-        p.stock_pwm_duties(LightState {
-            on: true,
-            preset: Preset::One
-        }),
-        Ok([6, 2])
-    );
-    assert_eq!(
-        p.stock_pwm_duties(LightState {
-            on: true,
-            preset: Preset::Two
-        }),
-        Ok([3, 6])
-    );
-    assert!(p.with_attestations(15).unwrap().require_stock_pwm().is_ok());
-    assert_eq!(
-        profile(15).require_stock_pwm(),
-        Err(ProfileError::UnsupportedProfile)
-    );
 }
-
 #[test]
-fn candidates_cannot_be_mistaken_for_commissioned_profiles() {
-    for flags in 0..15 {
-        assert!(profile(flags).require_commissioned().is_err());
-    }
-    assert!(profile(15).require_commissioned().is_ok());
-    assert!(profile(0).with_attestations(16).is_err());
-    assert_eq!(
-        Profile::decode(&profile(0).encode())
-            .unwrap()
-            .attestations(),
-        0
-    );
-}
-
-#[test]
-fn reserved_bus_modes_and_uncalibrated_presets_are_rejected() {
-    let p = profile(15);
-    for address in [0, 3, 7, 0x70, 0x78, 0xff] {
-        assert_eq!(
-            Profile::new(address, p.mode2(), [303, 200], *p.frames(), 15),
-            Err(ProfileError::Address)
-        );
-    }
-    for mode in [3, 0x1c, 0x34, 0x94] {
-        assert_eq!(
-            Profile::new(0x15, mode, [303, 200], *p.frames(), 15),
-            Err(ProfileError::Mode)
-        );
-    }
-    assert_eq!(
-        Profile::new(0x15, 0x14, [303, 303], *p.frames(), 15),
-        Err(ProfileError::Temperature)
-    );
-    let mut frames = *p.frames();
-    frames[2] = frames[1];
-    assert_eq!(
-        Profile::new(0x15, 0x14, [303, 200], frames, 15),
-        Err(ProfileError::IdenticalPresets)
-    );
-}
-
-#[test]
-fn initialization_wakes_before_pwm_and_never_releases_gate() {
+fn initialization_writes_stock_off_before_waking_and_reads_it_back() {
     let (h, mut driver) = fixture();
-    driver.initialize_disabled().unwrap();
+    driver.initialize_off().unwrap();
     let h = h.borrow();
-    assert!(h.disabled);
-    assert_eq!(
-        &h.events[..4],
-        &[
-            Event::Gate(true),
-            Event::Write(vec![0, 0]),
-            Event::Delay(500),
-            Event::Write(vec![1, 0x14])
-        ]
-    );
-    assert!(!h.events.contains(&Event::Gate(false)));
-    assert_eq!(h.registers[2..], profile(15).frames()[0].0);
+    assert_eq!(h.events[0], Event::Oe(true));
+    assert_eq!(h.events[1], Event::Write(vec![1, MODE2]));
+    assert_eq!(h.events[3], Event::Write(vec![0, 0]));
+    assert_eq!(h.events[4], Event::Delay(500));
+    assert_eq!(h.events[5], Event::Read);
+    assert!(!h.events.contains(&Event::Oe(false)));
+    assert_eq!(h.registers[2..], stock_frame(LightState::default()));
 }
-
 #[test]
-fn enable_only_after_complete_readback_and_off_keeps_gate_asserted() {
+fn on_is_read_back_before_oe_enable_and_off_writes_zero_even_without_oe() {
     let (h, mut driver) = fixture();
-    let on = LightState {
-        on: true,
-        preset: Preset::Two,
-    };
-    driver.apply(on).unwrap();
+    driver
+        .apply(LightState {
+            on: true,
+            preset: Preset::Two,
+        })
+        .unwrap();
     {
         let h = h.borrow();
         assert_eq!(
             &h.events[h.events.len() - 2..],
-            &[Event::Read, Event::Gate(false)]
+            &[Event::Read, Event::Oe(false)]
         );
-        assert_eq!(h.registers[2..], profile(15).frames()[2].0);
     }
-    driver.apply(LightState::default()).unwrap();
-    assert!(h.borrow().disabled);
-    assert_eq!(h.borrow().registers[2..], profile(15).frames()[0].0);
+    driver.shutdown().unwrap();
+    assert_eq!(
+        h.borrow().registers[2..],
+        stock_frame(LightState::default())
+    );
 }
-
 #[test]
-fn every_bus_failure_keeps_intent_unknown_and_retry_reinitializes() {
-    // Successful first application consists of 9 fallible operations. Failure
-    // at initial gate assertion is covered too; it cannot claim lamp-off.
-    for fail_at in 0..9 {
+fn each_io_failure_invalidates_acknowledgement_and_retry_reinitializes() {
+    for fail_at in 0..8 {
         let (h, mut driver) = fixture();
         h.borrow_mut().fail_at = Some(fail_at);
         let mut controller = Controller::new(None);
@@ -266,17 +165,13 @@ fn every_bus_failure_keeps_intent_unknown_and_retry_reinitializes() {
         );
         assert_eq!(controller.applied(), None);
         assert!(controller.intended().on);
-        if fail_at != 0 {
-            assert!(h.borrow().disabled);
-        }
         h.borrow_mut().fail_at = None;
         controller.reconcile(&mut driver).unwrap();
         assert_eq!(controller.applied(), Some(controller.intended()));
     }
 }
-
 #[test]
-fn corrupted_readback_never_enables_output() {
+fn corrupted_readback_does_not_release_oe_or_claim_success() {
     let (h, mut driver) = fixture();
     h.borrow_mut().corrupt_read = true;
     assert_eq!(
@@ -286,22 +181,41 @@ fn corrupted_readback_never_enables_output() {
         }),
         Err(DriverError::ReadbackMismatch)
     );
-    assert!(h.borrow().disabled);
-    assert!(!h.borrow().events.contains(&Event::Gate(false)));
+    assert!(!h.borrow().events.contains(&Event::Oe(false)));
 }
-
 #[test]
-fn hardware_reset_is_detected_and_reconciled_without_losing_intent() {
+fn lost_bus_can_leave_previous_pwm_active_and_off_is_not_acknowledged() {
     let (h, mut driver) = fixture();
-    let mut controller = Controller::new(Some(LightState {
+    let on = LightState {
         on: true,
         preset: Preset::Two,
-    }));
+    };
+    let mut controller = Controller::new(Some(on));
     controller.reconcile(&mut driver).unwrap();
+    h.borrow_mut().fail_bus = true;
+    controller.command(Command::SetPower(false));
+    assert!(controller.reconcile(&mut driver).is_err());
+    assert!(driver.shutdown().is_err());
+    assert_eq!(controller.applied(), None);
+    assert_eq!(h.borrow().registers[2..], stock_frame(on));
+    h.borrow_mut().fail_bus = false;
+    controller.reconcile(&mut driver).unwrap();
+    assert_eq!(
+        h.borrow().registers[2..],
+        stock_frame(LightState::default())
+    );
+}
+#[test]
+fn pca_reset_is_detected_and_each_apply_restores_full_configuration() {
+    let (h, mut driver) = fixture();
+    let state = LightState {
+        on: true,
+        preset: Preset::Two,
+    };
+    driver.apply(state).unwrap();
     h.borrow_mut().registers.fill(0);
-    assert!(driver.verify(controller.intended()).is_err());
-    driver.shutdown().unwrap();
-    controller.invalidate_applied();
-    controller.reconcile(&mut driver).unwrap();
-    assert_eq!(h.borrow().registers[2..], profile(15).frames()[2].0);
+    assert!(driver.verify(state).is_err());
+    driver.apply(state).unwrap();
+    assert_eq!(h.borrow().registers[1], MODE2);
+    assert_eq!(h.borrow().registers[2..], stock_frame(state));
 }

@@ -2,15 +2,9 @@ use std::{convert::Infallible, env, process::ExitCode};
 
 use key_right_core::{Command, Controller, LightOutput, LightState, Preset};
 
-mod profile;
-
 const USAGE: &str = "Usage: key-right simulate [on|off|preset-1|preset-2|brightness=N]...\n\
 Runs one in-memory session, starting off. N is 0..100 and is ignored.\n\
 This simulator performs no device or network I/O.\n\
-       key-right profile stock\n\
-Print an uncommissioned stock 3300 K / 5000 K profile as 160 hex digits.\n\
-       key-right profile inspect <HEX_OR_FILE>\n\
-Validate and describe a profile without accessing hardware.\n\
 Use scripts/device.py for the native USB console.";
 
 #[derive(Default)]
@@ -94,7 +88,6 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             Ok(())
         }
-        [mode, values @ ..] if mode == "profile" => profile::run(values),
         _ => Err(USAGE.to_owned()),
     }
 }
