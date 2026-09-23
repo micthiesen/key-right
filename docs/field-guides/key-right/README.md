@@ -43,10 +43,10 @@ Home pairing remain untested until the user follows the guide.
 
 ## Printing
 
-Print revision 2 as two single-sided Letter sheets so the pin notes and wiring
-can sit beside one another. The current receipt is saved as
-`print-receipt.json` after submission; printer completion is not inspection of
-physical paper.
+Revision 2 was printed as two single-sided Letter sheets so the pin notes and
+wiring can sit beside one another. [The receipt](print-receipt.json) records
+Executor's completed response for job **233**, with two impressions. Printer
+completion is not inspection of physical paper.
 
 [Revision 1 receipt](print-receipt-rev1.json) records the previous eight-page
 copy, job 232. Its PDF is preserved at the commit URL in that receipt. Discard
