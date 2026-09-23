@@ -6,7 +6,7 @@ pub fn decode_profile(hex: &str) -> Result<Profile, &'static str> {
         return Err("profile_requires_160_hex_digits");
     }
     let mut bytes = [0; PROFILE_LEN];
-    for (out, pair) in bytes.iter_mut().zip(hex.as_bytes().chunks_exact(2)) {
+    for (out, pair) in bytes.iter_mut().zip(hex.as_bytes().as_chunks::<2>().0) {
         let digit = |c: u8| match c {
             b'0'..=b'9' => Some(c - b'0'),
             b'a'..=b'f' => Some(c - b'a' + 10),

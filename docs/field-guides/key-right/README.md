@@ -56,3 +56,9 @@ bypassing isolation or inventing a replacement pinout.
 The print receipt records the reviewed PDF hash, delivery revision, requested
 settings and observed printer state. Printer-reported completion is not physical
 inspection of the paper.
+
+The [2026-09-23 receipt](print-receipt.json) confirms job 232 completed all eight
+impressions. Executor lost its response, so completion was verified through
+read-only IPP job history. The printer reported short-edge duplex despite the
+long-edge request; no duplicate was submitted. Flip the completed copy on its
+short edge if the paper matches that report.
