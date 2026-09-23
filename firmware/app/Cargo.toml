@@ -1,0 +1,108 @@
+[package]
+name = "key-right-app"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+# Separate target and SDK dependency graph from the portable host workspace.
+[workspace]
+
+[[bin]]
+name = "key-right-bench"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+key-right-core = { path = "../core" }
+
+# Matter over Wi-Fi with BLE commissioning, pinned to Stillair's working snapshot.
+# The default `rustcrypto` backend avoids an ESP-IDF C cross-compiler requirement.
+rs-matter-embassy = { git = "https://github.com/ivmarkov/rs-matter-embassy", rev = "f31233a6fd4530ff25ad3bcbd9abf8fe854320aa", features = [
+  "esp",
+  "log",
+  "embassy-net",
+] }
+# rs-matter pulls a few libc symbols in through its x509 path.
+tinyrlibc = { version = "0.5", default-features = false, features = [
+  "memchr",
+  "utoa",
+  "strtoul",
+] }
+esp-storage = { version = "0.9", default-features = false, features = ["esp32c6"] }
+
+log = { version = "0.4", default-features = false }
+esp-println = { version = "0.17", default-features = false, features = [
+  "esp32c6",
+  "jtag-serial",
+  "log-04",
+] }
+esp-backtrace = { version = "0.19", default-features = false, features = [
+  "esp32c6",
+  "panic-handler",
+  "println",
+] }
+
+esp-hal = { version = "1.1", default-features = false, features = [
+  "esp32c6",
+  "unstable",
+  "rt",
+] }
+esp-rtos = { version = "0.3", default-features = false, features = [
+  "esp32c6",
+  "embassy",
+  "esp-alloc",
+  "esp-radio",
+] }
+esp-bootloader-esp-idf = { version = "0.5", default-features = false, features = [
+  "esp32c6",
+] }
+esp-alloc = { version = "0.10", default-features = false, features = [
+  "global-allocator",
+  # C-compatible malloc/free needed by esp-radio's BLE blob.
+  "compat",
+  "esp32c6",
+] }
+esp-radio = { version = "0.18", default-features = false, features = [
+  "esp32c6",
+  "wifi",
+  "ble",
+  "unstable",
+] }
+
+embassy-executor = { version = "0.10", default-features = false }
+embassy-time = { version = "0.5", default-features = false }
+embassy-sync = { version = "0.8", default-features = false }
+embassy-embedded-hal = { version = "0.6", default-features = false }
+embedded-io-async = { version = "0.7", default-features = false }
+heapless = { version = "0.8", default-features = false }
+static_cell = "2"
+
+[features]
+# Required explicitly: this image acknowledges simulated output only.
+bench-light = []
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+# WiFi radio firmware requires optimization to function correctly.
+[profile.dev.package.esp-radio]
+opt-level = 3
+
+# From the pinned rs-matter-embassy `examples/esp/Cargo.toml`, via Stillair.
+# These crates share generated metadata. Update the complete table together.
+[patch.crates-io]
+esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
+esp-rtos = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
+esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
+esp-backtrace = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
+esp-println = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
+esp-radio = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
+esp-storage = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
+esp-bootloader-esp-idf = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
+esp-metadata-generated = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }

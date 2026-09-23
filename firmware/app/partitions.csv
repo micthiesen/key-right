@@ -1,0 +1,4 @@
+# ESP32-C6 bench image, requires at least 4 MiB flash. No OTA partition yet.
+# Name, Type, SubType, Offset, Size, Flags
+nvs, data, nvs, 0x9000, 0x10000,
+factory, app, factory, 0x20000, 0x3e0000,

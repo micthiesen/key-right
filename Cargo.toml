@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["firmware/core", "firmware/cli"]
+# The ESP application owns its target and SDK dependency graph.
+exclude = ["firmware/app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
