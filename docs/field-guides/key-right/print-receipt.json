@@ -1,0 +1,40 @@
+{
+  "pdf": "key-right-field-guide.pdf",
+  "sha256": "a48285ab654c96b48ec53470e42bc20b36ea0d2623fa437b5906c65ab47d9709",
+  "source_revision": "972bce6996730c63eb8740fa621748133190f0b3",
+  "delivery_url": "https://raw.githubusercontent.com/micthiesen/key-right/972bce6996730c63eb8740fa621748133190f0b3/docs/field-guides/key-right/key-right-field-guide.pdf",
+  "pages": 8,
+  "printer_model": "Brother HL-L2370DW",
+  "job_name": "Key Right guide r1 a48285ab65",
+  "copies": 1,
+  "paper": "letter",
+  "sides": "two-sided-long-edge",
+  "prepared_at_utc": "2026-09-23T19:09:23.727158+00:00",
+  "submission_at_utc": "2026-09-23T19:10:26.968747+00:00",
+  "status": "printer_reported_completed_with_duplex_mismatch",
+  "verification": "Commit-pinned public PDF downloaded and matched byte-for-byte to all eight visually reviewed pages.",
+  "submitted_via": "Executor omni.org.main.print_document",
+  "executor_result": "Internal tool error [03aaa392] after submission; no duplicate submission was made.",
+  "completion_observed_at_utc": "2026-09-23T19:13:42.647768+00:00",
+  "completion_verification": {
+    "method": "Read-only direct IPP Get-Jobs completed, then Get-Job-Attributes for matching job 232",
+    "job_id": 232,
+    "job_name": "Key Right guide r1 a48285ab65",
+    "job_state": "completed",
+    "job_state_reasons": "job-completed-successfully",
+    "impressions_completed": 8,
+    "copies": 1,
+    "media": "na_letter_8.5x11in",
+    "orientation": "portrait",
+    "sides_reported": "two-sided-short-edge",
+    "sides_requested": "two-sided-long-edge",
+    "print_scaling_reported": "fit",
+    "physical_paper_inspected": false
+  },
+  "remaining_uncertainty": "Printer reported short-edge duplex despite the explicit long-edge request. Physical page orientation has not been inspected. The completed copy is usable by flipping on the short edge if that report matches the paper; no unsolicited reprint was submitted.",
+  "final_executor_printer_status": {
+    "state": "idle",
+    "ready": true,
+    "queued_job_count": 0
+  }
+}
