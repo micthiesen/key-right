@@ -194,7 +194,7 @@ negative evidence, not proof that no gate or power sequencing exists. The
 `0xb3` passed at `0x30013f5a` initializes a timer object; it is not evidence of
 a module GPIO or PCA output-enable connection.
 
-### Why OE-high alone does not establish safe startup
+### PCA power-on behavior
 
 The [NXP PCA9635 datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf),
 sections 7.3.2, 7.4 and 7.7, distinguishes programmed operation from reset:
@@ -211,37 +211,25 @@ sections 7.3.2, 7.4 and 7.7, distinguishes programmed operation from reset:
   must be handled. True PCA power-on reset requires VDD to fall below its stated
   reset threshold, 0.2 V.
 
-The stock initializer's order is not a safe-start design proof. It enables all
-PWM outputs before the later zero routine, which can expose retained values.
-Do not claim a flash-free replacement until the physical enable/power path and
-both cold power-up and controller-only reset have been measured.
+The stock initializer's order is not a safe-start design proof. It configures
+output mode before clearing PWM. These are chip/data observations; they do not
+predict what the Key Light's external driver network does on this board. No
+physical startup behavior is claimed.
 
-## Minimum physical probes that settle the remaining branches
+## Physical facts still unresolved
 
-With the original controller retained, power removed, and capacitors discharged:
+The physical board's convenient SDA/SCL pads, bus voltage, pull-ups, and OE net
+have not been proven. DK9169 pad 10 SDA and pad 9 SCL are datasheet-derived
+candidates only. Realtek PC_1 on module pad 14 is configured as an output in the
+stock firmware, but the trace does not prove that it reaches PCA OE. Verify any
+connection on the actual board; do not infer it from this binary, photos, or
+module numbers. The selected project wiring and stop conditions are in
+[hardware.md](../hardware.md).
 
-1. Confirm the chip pin-1 orientation. Check candidate module pad 10 to U3 SDA
-   pin 27, and module pad 9 to U3 SCL pin 26. Record resistance, including any
-   series resistors, rather than requiring a continuity beep.
-2. Trace **U3 OE pin 23** to module pad 14 (PC_1), GND, supply, and any intervening
-   resistor/transistor. Trace pad 14 independently if it is not OE. Determine
-   whether any other signal gates LED power or PCA power.
-3. Trace U3 LED0 pin 6 and LED4 pin 10 to the actual gate networks and LED
-   connectors. Confirm which strings respond to each. The photographed QW/QWM
-   labels and four MOSFET packages alone do not establish these nets.
-4. Measure PCA VDD pin 28 and the idle SDA/SCL high voltage with stock power.
-   ESP32 pins must see 3.3 V-compatible levels. Identify every bus pull-up and
-   prevent an unpowered controller from being back-powered through them.
-5. Capture stock boot, off, 303/3 and 200/3 on SDA/SCL plus OE, both gate outputs,
-   and any power gate. A passive analyzer can confirm `0x15` and the byte pairs.
-   Record cold power-up and controller-only reset separately.
-
-If OE is tied low, adding ESP control requires isolating that connection. If
-OE reaches PC_1, confirm actual logic and reset behavior before reusing the pad.
-If neither controls a gate that is safe during PCA reset, an independent,
-default-off load or gate blanking circuit is needed. Its design depends on the
-measured transistor topology; forcing a high PCA output low directly can create
-contention and is not a valid generic fix.
+If I²C fails after wiring, determine whether required pull-ups remain after
+module removal. If measured bus highs are not nominally 3.3 V, stop before
+connecting the ESP32. Whether a level shifter or new pull-ups are needed depends
+on board measurements and is not part of the baseline.
 
 ## Other research and observation limits
 
@@ -260,9 +248,12 @@ contention and is not a valid generic fix.
   The recorded earlier `303`/brightness `3` logical state remains separate
   evidence. The stock LAN API cannot establish PCA waveforms or wiring.
 
-## Selected assembly path
+## Current assembly path and abandoned experiment
 
-The production design in [hardware.md](../hardware.md) uses direct ESP LEDC PWM
-through TXU0102, after isolating PCA pins 6/10. Original-bus capture, address probing
-and OE tracing described above are research options, not required assembly steps.
-Use the printed guide's actual pin-1, voltage, disabled-pad and PWM checks instead.
+The selected path removes only the Realtek module and retains the PCA9635 control
+path. XIAO D10/GPIO18 routes SDA, D9/GPIO20 routes SCL, and D3/GPIO21 may route to
+active-low OE only when the board net is physically verified. PCA pins 6/10 stay
+in place. Startup/fault behavior has not been tested.
+
+An earlier draft used ESP LEDC through a TXU0102 and lifted PCA pins 6/10. That
+direct-PWM design is abandoned; none of its BOM or isolation guidance is current.

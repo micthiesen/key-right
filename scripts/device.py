@@ -118,22 +118,13 @@ class Console:
                 raise
 
 
-def expand_command(parts):
-    if len(parts) == 3 and parts[:2] == ["profile", "stage"] and parts[2].startswith("@"):
-        value = Path(parts[2][1:]).read_text().strip()
-        if len(value) != 160 or any(c not in "0123456789abcdefABCDEF" for c in value):
-            raise ConsoleError("Profile file must contain exactly 160 hexadecimal digits.")
-        parts = ["profile", "stage", value]
-    return " ".join(parts)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", help="USB serial path; auto-selects only when exactly one port exists")
     parser.add_argument("--list", action="store_true", help="list native USB serial candidates")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--log", type=Path, help="append timestamped received lines (may contain secrets)")
-    parser.add_argument("command", nargs="*", help="status, monitor, or one firmware command; profile stage @FILE is supported")
+    parser.add_argument("command", nargs="*", help="status, monitor, or one firmware command")
     args = parser.parse_args()
     if args.list:
         print("\n".join(ports()))
@@ -147,7 +138,7 @@ def main():
     log = None
     console = None
     try:
-        command = expand_command(args.command)
+        command = " ".join(args.command)
         if args.log:
             args.log.parent.mkdir(parents=True, exist_ok=True)
             # New captures are private even when the user's umask is permissive.

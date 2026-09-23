@@ -1,5 +1,5 @@
 //! Wi-Fi/BLE Matter transport adapted from Stillair and rs-matter-embassy.
-//! Public development attestation. Calibrated profile is required for output.
+//! Public development attestation and built-in stock PCA output settings.
 
 use core::fmt::Write as _;
 
@@ -140,7 +140,7 @@ pub async fn run(
     );
     let mut weak_rand = crypto.weak_rand().expect("weak RNG from crypto provider");
 
-    // Restore without opening a commissioning window during potentially lengthy calibration.
+    // Restore fabrics and network settings before starting the transport.
     if let Err(error) = stack.load(&mut store).await {
         halted(
             "Matter state could not be restored; NVS was preserved",
@@ -211,9 +211,7 @@ pub async fn run(
         );
     let mut driver = EspWifiDriver::new(wifi, bt);
 
-    log::warn!(
-        "identity={identity}; public development attestation; calibrated output profile required"
-    );
+    log::warn!("identity={identity}; stock PCA presets; public development attestation");
     let open_commissioning = || {
         if stack.is_commissioned() {
             return Err(Error::from(ErrorCode::InvalidState));
@@ -225,10 +223,6 @@ pub async fn run(
     };
     let transport = async {
         loop {
-            // Provisioning remains local USB only until all physical attestations are committed.
-            while runtime.profile().is_none() {
-                Timer::after(Duration::from_secs(1)).await;
-            }
             if !stack.is_commissioned() {
                 if let Err(e) = open_commissioning() {
                     log::error!("commissioning window: {e:?}");

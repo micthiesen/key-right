@@ -8,8 +8,6 @@ pub mod light;
 
 #[path = "../../src/presets.rs"]
 pub mod presets;
-#[path = "../../src/protocol.rs"]
-pub mod protocol;
 #[path = "../../src/recovery.rs"]
 pub mod recovery;
 #[path = "../../src/runtime.rs"]

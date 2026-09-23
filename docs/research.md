@@ -2,7 +2,7 @@
 
 Recorded 2026-09-22; autonomous firmware/hardware research added 2026-09-23. Separate observed hardware facts from proposals and unverified wiring.
 
-**Current design:** [direct PWM through TXU0102](hardware.md), with stock PCA output legs 6/10 isolated. Earlier I²C/OE proposals below are historical. [Signed firmware emulation](references/firmware-analysis.md) resolves address/configuration, channel order and nominal 3% PWM. The user selected 3300 K and 5000 K; real board voltages and physical behavior remain guide checks.
+**Current design:** remove only the Realtek module and drive the retained PCA9635 over I²C; see [hardware.md](hardware.md). An earlier TXU0102/direct-PWM proposal that lifted PCA pins 6/10 is abandoned and is not assembly guidance. [Signed firmware emulation](references/firmware-analysis.md) resolves address/configuration, channel order and nominal 3% PWM. The user selected 3300 K and 5000 K; actual bus access/levels and physical output remain unverified.
 
 ## Actual light and photos
 
@@ -37,9 +37,15 @@ Chip-level reference only, not a finalized board wiring instruction:
 - Ground/VSS: pin 14; VDD: pin 28.
 - Active-low output enable: pin 23.
 
-The board's convenient connection pads and logic supply still require field verification. Firmware emulation now establishes LED0/warm and LED4/cool, active-high commands, address 0x15 and MODE2=0x14. Bus pull-ups and OE tracing are not needed by the selected direct-PWM design. Removing the module may remove supporting resistors or other circuitry on that module. The user has selected a buck converter for ESP power; capacity of the old regulator need not determine the ESP supply design.
+The board's convenient connection pads, bus voltage, pull-ups, and OE route still require field verification. Firmware emulation establishes LED0/warm and LED4/cool, address `0x15`, stock I²C setup, and `MODE2=0x14`. Pull-ups and OE tracing matter to the selected I²C design. The old module may carry supporting bus components, so do not presume they remain after removal. The user selected an external buck converter for ESP power.
 
 [NXP datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf), also saved under references/datasheets.
+
+## XIAO power and GPIO sources
+
+The selected XIAO pin map is documented by [Seeed](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/): D10/GPIO18, D9/GPIO20, D3/GPIO21, 5V and GND. Seeed's [official schematic](https://files.seeedstudio.com/wiki/SeeedStudio-XIAO-ESP32C6/XIAO-ESP32-C6_v1.0_SCH_PDF_24028.pdf) shows the 5V header on the USB VBUS net. This build avoids connecting the two sources together: flash/request the pairing code before buck wiring, and disconnect the buck's 5 V lead before later USB service. No diode or source-select jumper is in the baseline. This is the selected exclusive-source wiring, not a general recommendation for projects that leave USB and external 5 V connected together.
+
+If I²C does not communicate, first establish whether pull-ups remain after module removal and whether the bus levels suit XIAO GPIO. Additional pull-ups or level translation are conditional troubleshooting only; no value or part is selected without measurements on this board.
 
 ## Original-controller research
 

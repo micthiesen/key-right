@@ -39,17 +39,17 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(self.received, b"status\n")
 
     def test_device_errors_are_errors(self):
-        thread = self.serve(b"KR ERR profile not commissioned\n")
-        with self.assertRaisesRegex(device.ConsoleError, "not commissioned"):
+        thread = self.serve(b"KR ERR I2C bus failure\n")
+        with self.assertRaisesRegex(device.ConsoleError, "I2C bus failure"):
             self.console.command("on 1")
         thread.join()
 
     def test_timeout_never_retries_a_mutating_command(self):
         thread = self.serve(b"INFO saving\n")
         with self.assertRaisesRegex(device.ConsoleError, "may have executed"):
-            self.console.command("profile commit")
+            self.console.command("on 1")
         thread.join()
-        self.assertEqual(self.received, b"profile commit\n")
+        self.assertEqual(self.received, b"on 1\n")
 
     def test_rejects_multiple_commands_before_writing(self):
         with self.assertRaisesRegex(device.ConsoleError, "one non-empty ASCII"):
