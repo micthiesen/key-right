@@ -1,39 +1,43 @@
 # Key Right
 
-Replace the original full-size Elgato Key Light's Realtek controller with an ESP32 running custom Rust firmware. Keep the existing LED driver and power circuitry. The primary requirement is reliable HomeKit control and automatic recovery without daily manual power cycles.
+Rust firmware replacing the original full-size Elgato Key Light's Realtek
+controller with a Seeed XIAO ESP32-C6. It retains the stock LED power stages and
+provides local Apple Home control through Stillair's Matter-over-Wi-Fi stack.
 
-The Rust workspace contains a portable `no_std` light-control core and a host
-simulator. The core tracks intended/applied on/off state and two preset slots,
-keeps nominal brightness fixed at 3%, and preserves intent across output errors.
-An ESP32-C6 bench application reuses Stillair's Matter-over-Wi-Fi connectivity,
-BLE commissioning, and flash persistence. Its light output is simulated; actual
-LED control and temperature presets still need wiring and calibration.
+Two mutually exclusive light controls select **3300 K** or **5000 K**, both at
+the stock **nominal 3%** setting. Offline emulation of the signed vendor firmware
+establishes the warm/cool PWM counts; optical output is still unmeasured.
+
+The real firmware builds and passes host behavior tests. **No board has been
+modified, flashed or physically validated.** Assembly, electrical checks,
+Apple Home pairing, fault injection and the seven-day soak are in the guide.
+
+## Assemble and use
+
+- [Printable field guide](docs/field-guides/key-right/key-right-field-guide.pdf)
+- [Exact parts and wiring](docs/hardware.md)
+- [Build, flash, USB commands and recovery](docs/development.md)
+- [Per-light acceptance record](docs/validation-record.md)
+
+The selected circuit drives the stock driver pads through a TXU0102 level
+translator, with the PCA9635's two output legs lifted and insulated. The translator
+isolates the outputs during startup. Follow the guide's measurements and power
+jumper rules before enabling either preset.
 
 ## Develop
 
-Install [Rust](https://rustup.rs/), then run from this directory:
-
 ```sh
 sh scripts/check.sh
-cargo run -p key-right-cli -- simulate on preset-2 brightness=100 off on
 sh scripts/check-firmware.sh
+cargo run -p key-right-cli -- profile inspect hardware/profiles/stock-3300-5000.hex
+python3 scripts/device.py --list
 ```
 
-The simulator runs one in-memory session without device or network access.
-`brightness=100` demonstrates an ignored brightness write. The 3% target is the
-stock light's nominal setting, not a verified PWM duty. `preset-1` and `preset-2`
-are slots awaiting actual colour temperatures.
+`firmware/core` is dependency-free `no_std` state/profile logic; `firmware/cli`
+simulates it without hardware. `firmware/app` has separate real and bench binaries.
+The gates run formatting, strict Clippy, Rust/Python tests and both MCU builds.
 
-## Project map
-
-- `firmware/core`: portable control logic and behavioral tests.
-- `firmware/cli`: host simulator and command-line tests.
-- `firmware/app`: separate ESP32-C6 Matter bench firmware workspace.
-- `scripts/check.sh`: formatting, Clippy, tests, and smoke test; also run in CI.
-- `scripts/check-firmware.sh`: Matter storage tests and ESP32-C6 release build checks.
-- [Development and remaining integration](docs/development.md)
-- [Specification and validation plan](docs/spec.md)
-- [Hardware findings and research](docs/research.md)
-- [Reference photos and datasheets](docs/references/README.md)
-
-Hardware plan recorded 2026-09-22; Rust/Matter setup updated 2026-09-23.
+See [requirements](docs/spec.md), [research](docs/research.md),
+[stock firmware evidence](docs/references/firmware-analysis.md) and
+[original photos/datasheets](docs/references/README.md). Firmware build and bench
+tests establish neither electrical safety nor real-network recovery.

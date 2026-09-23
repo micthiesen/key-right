@@ -5,6 +5,8 @@
 //! Brightness is a nominal stock-light setting, never a raw PWM duty. The board
 //! adapter must supply measured calibration and translate the two preset slots.
 
+pub mod pca9635;
+
 /// Intended brightness while on, in the original light's percentage scale.
 pub const FIXED_BRIGHTNESS_PERCENT: u8 = 3;
 
@@ -75,6 +77,12 @@ impl Controller {
     /// Last acknowledged state, or unknown after boot or a failed output write.
     pub const fn applied(&self) -> Option<LightState> {
         self.applied
+    }
+
+    /// Discard acknowledgement after a hardware reset or failed health check.
+    /// Intent survives and the next reconcile reapplies the complete output.
+    pub fn invalidate_applied(&mut self) {
+        self.applied = None;
     }
 
     /// Update intent and report whether it changed, so persistence can avoid

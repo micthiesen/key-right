@@ -9,11 +9,11 @@ The original lights currently need approximately daily power cycles. Reliability
 ## Locked decisions
 
 - Remove/desolder the Dexatek module. The user is comfortable doing this. Do not make reverse-engineering or reflashing the Realtek firmware the implementation path.
-- Use an ESP32-family development board. The initial Matter build targets ESP32-C6 to reuse Stillair's setup; the exact board is not selected.
+- Use the Seeed Studio XIAO ESP32-C6 (4 MB flash, native USB), reusing Stillair's compatible Rust stack.
 - Write the custom application firmware in Rust. Vendor libraries or C bindings are acceptable where needed; a pure-Rust radio stack is not required.
 - The external supply is **13 V DC, rated 4 A**. The user will use a **buck converter board to power the ESP**. This is decided, not an alternative awaiting approval. Match its regulated output to the chosen dev board's supported power input.
 - Normal light output is **3% brightness**. The replacement uses a fixed brightness, with no user-facing brightness slider required.
-- Provide on/off and **two colour-temperature presets**. The two temperatures remain to be supplied or recovered from existing settings.
+- Provide on/off and **two colour-temperature presets**. The user selected **3300 K and 5000 K**. Signed stock-firmware emulation establishes warm/cool raw PWM counts **6/2** and **3/6** at nominal 3%, respectively. This is not an optical calibration.
 - Use Matter over Wi-Fi with BLE commissioning, reusing the Rust connectivity setup in `../stillair`, for direct Apple Home access. This supersedes the original direct-HAP/Homebridge options.
 - Use prior firmware research as reference material rather than directly forking that firmware project.
 - No cloud dependency for ordinary operation.
@@ -24,35 +24,36 @@ The intended implementation is the complete working replacement, including hardw
 
 Physical soldering, connecting hardware, and other tasks the agent cannot perform require coordination with the user. Batch these into concrete instructions based on evidence. Do not invent pinouts or present unresolved electrical details as verified facts. The user declined manual continuity mapping during the initial discussion; prefer existing documentation, visual tracing, and evidence obtainable by the agent. If physical evidence is indispensable, explain exactly what remains unknown rather than guessing.
 
-The initial documentation-only task is complete. The subsequent setup request
-authorizes Rust project scaffolding, verification, commit, and push. The current
-baseline and outstanding firmware/hardware integration are recorded in
-[development.md](development.md).
+The current authorization covers the complete autonomous software/research work,
+review, verification, commit/push and a printed field guide. Physical checks are
+consolidated in that guide, with explicit stop conditions for a different board.
 
 ## Hardware architecture
 
 ```text
 13 V supply -> existing LED power circuitry -> existing LED panels
-           -> buck converter -> ESP32 dev board
+           -> fused buck -> diode -> removable USB/buck jumper -> XIAO 5V
 
-ESP32 -> I2C -> existing PCA9635 -> existing output circuitry
-      -> output-enable control if required by the board
-      -> Matter over Wi-Fi -> Apple Home
-USB   -> development host for flashing, logs, and recovery
+XIAO GPIO18/20 -> TXU0102 -> 1k series resistors -> warm/cool driver-input pads
+XIAO GPIO21   -> TXU0102 output enable (external pulldown)
+XIAO 3V3     -> TXU VCCA; stock logic rail -> TXU VCCB
+XIAO         -> Matter over Wi-Fi -> Apple Home
+USB          -> flashing, local setup, logs and recovery (buck jumper OPEN)
 ```
 
-The photographed board has a Dexatek DK-9169 V1.0 module with an RTL8711AM chip, and a separate PCA9635PW driver at U3. The PCA9635 is the intended control interface. Exact solder points, ESP GPIO assignments, and connector pinouts are intentionally not fixed here.
+The photographed board has a DK-9169 V1.0/RTL8711AM module and PCA9635PW at U3.
+Remove the Realtek module. Lift and insulate U3 pins 6 (warm) and 10 (cool), then
+connect the translator to their vacated board pads. Retain the stock power stages.
+PCA I²C and OE are not connected to the replacement MCU. This supersedes the
+original PCA-bus plan because PCA POR can drive a high output even with OE high.
 
-Hardware integration must account for:
-
-- Removing the old controller so it cannot contend for the control bus.
-- Connecting I2C data, clock, and common ground; handling the PCA9635 output-enable signal as the actual board requires.
-- Establishing the bus pull-up voltage and whether required pull-ups remain after module removal.
-- Checking for additional enable signals or supporting circuitry affected by module removal.
-- Identifying the used LED channels, warm/cool mapping, output polarity, and appropriate driver configuration.
-- Preserving the original LED power circuitry and sensible combined warm/cool output limits.
-- Securing the buck and ESP, providing insulation and strain relief, keeping them clear of hot power resistors, and positioning the antenna appropriately.
-- Retaining accessible USB flashing/logging and a recoverable bootloader path.
+[Hardware details](hardware.md) own the exact BOM, five pulldowns, two series
+resistors, two bypass capacitors, pin table and source links. The physical pin-1 mark must be identified;
+photos do not support a trustworthy numbered overlay. Verify stock logic voltage,
+disabled-pad voltage, pulse integrity and safe-off behavior in the guide.
+Do not tie the XIAO and stock logic rails together. Open the buck jumper before
+attaching USB; close it only with USB unplugged. Insulate and secure all added
+parts, retain USB/BOOT access, and put the antenna outside continuous metal.
 
 Four two-pin LED connectors were disconnected by the user. They can remain disconnected for initial controller/network work, but must be reconnected for output, load, thermal, and recovery-flicker validation. Preserve connector identity and polarity. The photographs show board labels W-1, W-2, F-1, and F-2; these are not yet an electrically verified channel map.
 
@@ -84,7 +85,7 @@ over the connectivity and persistence, then verify discovery, event delivery,
 reconnects, and fault recovery here. The earlier Homebridge fork remains background
 reference and is not a dependency of this implementation.
 
-Expose the two presets in a clear Apple Home interaction. Preserve fixed brightness regardless of incidental brightness writes from an integration. Both lights must have distinct stable identities and independently recover from failures.
+Expose two mutually exclusive on/off light endpoints labelled 3300 K and 5000 K. Turning either on selects it; turning the inactive endpoint off leaves the active one on. Preserve fixed brightness regardless of incidental brightness writes from an integration. Both lights must have distinct stable identities and independently recover from failures.
 
 ## Agent development and observation
 
@@ -103,7 +104,7 @@ These describe capabilities, not an approved shopping list. Select concrete equi
 
 ## Validation steps and acceptance
 
-1. **Hardware control:** establish communication with the retained driver and prove on/off, both presets, and fixed brightness on the real LEDs. Record channel mapping, polarity, and resulting configuration.
+1. **Hardware control:** verify the TXU/driver-pad path and prove on/off, both presets, and nominal fixed brightness on the real LEDs. Record channel mapping, voltage, polarity, PWM and observed optical output.
 2. **Safe startup/output:** observe cold boot, controller reset, firmware restart, and recovery. No unexpected full-brightness pulse or uncontrolled output. Document any unavoidable interruption.
 3. **Wi-Fi failure injection:** repeatedly interrupt the AP, reject/drop traffic, renew/change DHCP addressing, and restore service. The light must reconnect and become controllable without touching it or re-pairing.
 4. **Integration recovery:** restart/disconnect Matter controllers and interrupt discovery/event connections. Restore correct state and control without duplicate accessories or stale state.

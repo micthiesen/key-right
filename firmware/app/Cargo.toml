@@ -14,6 +14,13 @@ path = "src/main.rs"
 test = false
 bench = false
 
+[[bin]]
+name = "key-right"
+path = "src/device.rs"
+required-features = ["hardware-light"]
+test = false
+bench = false
+
 [dependencies]
 key-right-core = { path = "../core" }
 
@@ -74,6 +81,8 @@ esp-radio = { version = "0.18", default-features = false, features = [
 embassy-executor = { version = "0.10", default-features = false }
 embassy-time = { version = "0.5", default-features = false }
 embassy-sync = { version = "0.8", default-features = false }
+bt-hci = { version = "0.8", default-features = false }
+embassy-futures = { version = "0.1", default-features = false }
 embassy-embedded-hal = { version = "0.6", default-features = false }
 embedded-io-async = { version = "0.7", default-features = false }
 heapless = { version = "0.8", default-features = false }
@@ -82,6 +91,7 @@ static_cell = "2"
 [features]
 # Required explicitly: this image acknowledges simulated output only.
 bench-light = []
+hardware-light = []
 
 [profile.release]
 opt-level = "s"

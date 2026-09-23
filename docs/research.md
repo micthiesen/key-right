@@ -1,6 +1,8 @@
 # Findings and references
 
-Recorded 2026-09-22. Separate observed hardware facts from proposals and unverified wiring.
+Recorded 2026-09-22; autonomous firmware/hardware research added 2026-09-23. Separate observed hardware facts from proposals and unverified wiring.
+
+**Current design:** [direct PWM through TXU0102](hardware.md), with stock PCA output legs 6/10 isolated. Earlier I²C/OE proposals below are historical. [Signed firmware emulation](references/firmware-analysis.md) resolves address/configuration, channel order and nominal 3% PWM. The user selected 3300 K and 5000 K; real board voltages and physical behavior remain guide checks.
 
 ## Actual light and photos
 
@@ -35,7 +37,7 @@ Chip-level reference only, not a finalized board wiring instruction:
 - Ground/VSS: pin 14; VDD: pin 28.
 - Active-low output enable: pin 23.
 
-The board's convenient connection pads, logic supply, pull-ups, output-enable wiring, used channels, and transistor polarity still require evidence. Removing the module may remove supporting resistors or other circuitry on that module. The user has selected a buck converter for ESP power; capacity of the old regulator need not determine the ESP supply design.
+The board's convenient connection pads and logic supply still require field verification. Firmware emulation now establishes LED0/warm and LED4/cool, active-high commands, address 0x15 and MODE2=0x14. Bus pull-ups and OE tracing are not needed by the selected direct-PWM design. Removing the module may remove supporting resistors or other circuitry on that module. The user has selected a buck converter for ESP power; capacity of the old regulator need not determine the ESP supply design.
 
 [NXP datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf), also saved under references/datasheets.
 
@@ -73,7 +75,7 @@ The [latest listed original Key Light firmware](https://help.elgato.com/hc/en-us
 
 The user maintains [@micthiesen/homebridge-elgato-key-lights](https://github.com/micthiesen/homebridge-elgato-key-lights). Prior saved notes report version 1.1.0 with independent device supervisors, retry/backoff, HTTP deadlines, unavailable-state handling, and stable accessory identity. Publication and simulated recovery tests were recorded previously; installation of that fork on Boris and real HomeKit operation were not verified in this session.
 
-This may be a useful integration starting point for an ESP local API. It cannot repair a hung radio in the old light and is not evidence that the replacement's recovery requirements already pass.
+This is historical integration context; the selected replacement uses Matter directly. It cannot repair a hung radio in the old light and is not evidence that the replacement's recovery requirements already pass.
 
 ## Selected Matter implementation
 
