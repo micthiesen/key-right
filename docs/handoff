@@ -1,0 +1,461 @@
+# Elgato Key Light / ESP32-C3 firmware specification
+
+**Handoff for an implementation agent — 28 September 2026**
+
+Build the complete firmware described here, including the hardware driver, persistent installation setup, Matter integration, recovery commands, tests, and build/flash tools. Deliver one application image containing all functionality. Do not deliver a demonstration, separate diagnostic firmware, staged feature releases, or instructions to rewrite and reflash the firmware after discovering the LED channels.
+
+This is a one-off modification of an existing lamp, not a commercial product platform. Favor a small, understandable implementation over frameworks, dashboards, or unnecessary abstractions.
+
+## 1. Outcome and scope
+
+The original Wi-Fi module has been removed from an Elgato Key Light. An ESP32-C3 replaces it and controls the existing NXP LED controller over I²C. Retain the original power electronics and LED wiring.
+
+Normal operation must provide:
+
+- Matter over **2.4 GHz Wi-Fi**, with BLE commissioning. No Thread, Homebridge, MQTT broker, cloud service, or Elgato application is required by this firmware.
+- Two selectable white-light presets, **Warm** and **Cool**, with one fixed installation brightness.
+- Off, reliable reconnection, persistent commissioning/configuration, and predictable restart behavior.
+- The exact five-wire interface in section 2. No additional wires or components are part of this specification.
+
+### Chosen Matter interface
+
+Expose **one Matter node with two mutually exclusive On/Off Light endpoints**, named `Key Light Warm` and `Key Light Cool`. Turning either one on selects that preset and reports the other as off. This is a design choice for this specification, not a previously specified UI preference.
+
+This deliberately represents the user's two-preset/fixed-brightness requirement using ordinary on/off controls. Do not advertise dimming or color-temperature controls and then silently ignore their commands. Do not implement a bridge or pretend the two endpoints are separately networked devices. The SDK supports multiple endpoints on one node. [S2]
+
+### Defaults that were not specified by the user
+
+Use these explicit installation defaults, not purported measurements or user preferences:
+
+| Setting | Default |
+|---|---|
+| Warm preset | Warm LED bank only |
+| Cool preset | Cool LED bank only |
+| Fixed brightness | 30% electrical PWM duty, editable once in installation setup |
+| Behavior after any MCU restart | Off; retain calibration and Matter membership |
+| Behavior during Wi-Fi loss | Keep the current light state and reconnect |
+| OTA | Not included; USB programming/recovery remains available |
+
+No exact Kelvin values or final preferred brightness have been supplied. Do not invent calibrated Kelvin values, optical brightness, or LED-current measurements. The two preset mixes and fixed brightness must be editable in the installed firmware's USB setup interface, then persist. There is no brightness slider during ordinary Matter use.
+
+## 2. Hardware contract — do not change
+
+### 2.1 ESP board
+
+- **Processor/ESP-IDF target: `esp32c3`.** Not ESP32, S3, or C6.
+- **Photographed development-board silkscreen: `ESP32-C3_MINI_V1`.** It is a small blue board with USB-C, BOOT and RESET buttons, and a bare ESP32-C3 package.
+- Do not identify this board as an official `ESP32-C3-MINI-1U` module. That identification in an earlier conversation was incorrect.
+- The clearer photos show an onboard antenna component and an external antenna socket. Antenna selection/routing is hardware; do not invent a firmware antenna-selection GPIO.
+- Plan for **4 MiB flash and no PSRAM**, but treat flash capacity as unverified until the connected device's flash ID/capacity is read. Do not require PSRAM or an 8 MiB partition layout.
+- Use the chip's native USB Serial/JTAG interface for programming and the bidirectional installation console. Do not configure C3 USB as a TinyUSB/USB-OTG mass-storage or DFU device. Native USB uses GPIO18/19. [S3, S4]
+
+### 2.2 Exact five connections
+
+This table reproduces the finalized wiring field guide. The Key Light orientation is: white power resistors to the left; removed module footprint below the PCA9635. Count only the horizontal top row of U4.
+
+| Signal | Key Light connection | ESP board pad | Firmware meaning |
+|---|---|---|---|
+| Power | J6 / DEBUG, top-left pad; measured 3.37 V | `3.3` | Direct regulated supply; no GPIO |
+| Ground | J8 / UART, top pad of the left of its two three-pad columns | `G` | Common ground |
+| SDA | U4 top row, second pad from left; PCA9635 pin 27 | `4` | GPIO4, I²C SDA |
+| SCL | U4 top row, first pad from left; PCA9635 pin 26 | `5` | GPIO5, I²C SCL |
+| OE | U4 top row, fifth pad from right; PCA9635 pin 23 | `6` | GPIO6, active-low controller output enable |
+
+The C3's **back/label side**, with USB-C at the top, has `G` second down on the left, `3.3` third down on the left, `4` fourth down on the left, `5` at the top right, and `6` second down on the right. Printed board numbers are GPIO numbers, not Arduino board-specific `D` aliases.
+
+Keep these definitions centralized and compile-time fixed:
+
+```cpp
+constexpr gpio_num_t kSda = GPIO_NUM_4;
+constexpr gpio_num_t kScl = GPIO_NUM_5;
+constexpr gpio_num_t kOe  = GPIO_NUM_6;
+constexpr uint32_t kI2cHz = 100000;
+```
+
+GPIO4/5/6 also have alternate JTAG functions. Explicitly assign their GPIO/I²C functions; do not select external pad JTAG on them. Preserve native USB debugging instead. Leave other application GPIOs unused, including any unverified onboard status LED. [S3]
+
+### 2.3 Measurements already completed
+
+These are user measurements, not values to remeasure as a prerequisite to implementing the firmware:
+
+| Measurement | Result |
+|---|---:|
+| DC input | 13 V |
+| PCA9635 VDD | 3.37 V |
+| Idle SDA, SCL, OE | 3.37 V each |
+| SDA-to-VDD, SCL-to-VDD, OE-to-VDD | Approximately 9.9 kΩ each |
+| SDA-to-SCL | Approximately 20 kΩ |
+| VDD-to-GND, unpowered | Approximately 1 kΩ |
+| IC-pin-to-selected-pad continuity | Approximately 0–0.1 Ω |
+
+The readings strongly support existing approximately 10 kΩ pull-ups on SDA, SCL, and OE. Retain them; start the bus at 100 kHz. GPIO6 should be **open-drain**: write/release HIGH to let the existing OE pull-up act, and drive LOW to enable the configured outputs. Set the output latch HIGH before enabling open-drain output mode.
+
+No buck converter, level shifter, extra pull-ups, or connection to the C3 `5V` pad. The original rocker has already been bypassed into its working ON state. Firmware does not control or reconnect that switch.
+
+The existing rail is accepted for this installation. Keep brownout detection enabled and record reset reasons; do not claim that an unloaded 3.37 V measurement proves its behavior during Wi-Fi transmission.
+
+### 2.4 USB power rule
+
+With the lamp wiring attached, power the assembly from the lamp and use USB with **VBUS/5 V blocked, but USB data and ground intact**. A charging-only cable/data blocker is the opposite of what is needed.
+
+Ordinary powered USB requires disconnecting the C3 from all five lamp wires first. Merely unplugging the lamp adapter does not isolate the shared 3.3 V rail or signal paths. Keep this rule in the generated flashing instructions. Do not introduce a software step that depends on USB back-powering the lamp.
+
+## 3. What is known versus what must be learned at installation
+
+The GPIOs, power, bus voltage, physical solder points, and controller model are settled.
+
+The following have **not** been established:
+
+1. The PCA9635's individual seven-bit I²C address.
+2. Which of its output channels drive the warm bank and which drive the cool bank. A bank may use several outputs.
+3. The external LED-stage polarity and the controller output configuration that actually turns the lamp off.
+4. The user's final preferred brightness and preset mixes.
+
+The implementation must support recording these through a guided USB setup session in the **same final firmware image**. Persist the results; no diagnostic reflash and no mandatory second compile.
+
+Address discovery can be automatic. Identifying visible warm/cool light and confirming an electrically correct off-state require human observation: there is no optical, current, or temperature feedback wired to the ESP. Do not claim to auto-detect those properties from I²C acknowledgements.
+
+## 4. Stack and reproducible build
+
+Use **C++ with native ESP-IDF and Espressif ESP-Matter**, starting from the official light example's application structure but replacing its LED and board drivers completely.
+
+At the time this specification was prepared, the official **ESP-Matter `release/v1.6` README recommends ESP-IDF `v5.5.5`**, with connectedhomeip revision `93abd8e68`. Use that compatible release line, resolving the actual ESP-Matter commit and recording full commit hashes in the repository. Do not combine an arbitrary current ESP-IDF with a different Matter branch. The release README, not `main` or a floating `/latest/` documentation page, controls dependency compatibility. [S1]
+
+Required build properties:
+
+- Target `esp32c3`; Wi-Fi Matter, BLE commissioning, native USB console.
+- A pinned SDK/submodule setup, `sdkconfig.defaults`, and a checked-in partition table.
+- A project-specific board configuration; no example RGB LED, LEDC, WS2812, board LED, or reset-button driver automatically commandeering the chosen pins.
+- Use IDF's current-for-the-pinned-release I²C master API from `driver/i2c_master.h`, not both legacy and new drivers in one build. Use finite transaction timeouts. [S5]
+- One application slot, suitable NVS/configuration storage, and any partitions required by the selected commissioning provider. No OTA slots or large filesystem are required.
+- Separate installation calibration storage from Matter's ordinary resettable state. Validate reset behavior against the actual SDK.
+- Optimize for the C3's actual memory budget. Disable unused device types/features and verbose routine logs; do not remove commissioning/security functionality merely to get a smaller build. [S6]
+
+The flash helper must verify processor type and detected flash capacity before writing. Produce a clear error if the chosen image/partition table cannot fit. Normal flashing must not erase retained calibration or commissioning data. An initial destructive erase must be an explicit action, never an unconditional build-script step.
+
+## 5. PCA9635 driver requirements
+
+### 5.1 Controller facts and implementation references
+
+This is **PCA9635PW**, not PCA9685. Relevant registers are MODE1 `0x00`, MODE2 `0x01`, PWM0–15 `0x02–0x11`, and LEDOUT0–3 `0x14–0x17`. Individual PWM is eight-bit at approximately 97 kHz. Group dimming introduces approximately 190 Hz modulation; do not use it. OE HIGH selects MODE2's programmed disabled-output state, which is not inherently “lamp off.” Clear SLEEP and allow at least 500 μs for the oscillator before PWM use. The default all-call address is `0x70` in seven-bit notation; software reset uses `0x03`. [S7]
+
+Use the NXP datasheet, particularly sections 7.1–7.8, as the implementation authority for bitfields, auto-increment framing, output polarity, and readback masks. Do not copy a PCA9685 driver or assume its addressing, frequency, register layout, or PWM encoding applies.
+
+### 5.2 Address discovery
+
+Use seven-bit addresses throughout the application, logs, and saved configuration. Never store an eight-bit address byte containing the read/write bit.
+
+At installation:
+
+1. Release OE HIGH, initialize I²C, and scan with bounded probes. Start with `0x08–0x77`.
+2. Treat an acknowledgement at `0x70` as a possible all-call alias, not a second LED controller or an acceptable permanent address.
+3. Read plausible controller registers at individual candidates. These are consistency checks, not a silicon identity register.
+4. If there is one plausible individual candidate, select it. If several remain, print the candidates and require an explicit selection; do not write arbitrary registers to every responding device.
+5. Once the candidate is selected, disable its all-call/subaddress responses, rescan, and verify communication at the individual address. Preserve unrelated state until the output baseline is deliberately configured.
+6. Save the verified individual address. On later boots, use and validate it rather than repeatedly experimenting with all devices.
+
+Also provide an explicit extended-address scan for this closed bus: the chip's address straps can use some addresses outside the conventional scan range. Keep `0x03` reserved for reset handling and never automatically issue reset or general-call commands while scanning. Do not give up with a fake “controller missing” conclusion merely because the only conventional response is the all-call alias.
+
+Do not use all-call writes for normal operation. Do not routinely issue software reset: resetting the controller also changes its output defaults.
+
+### 5.3 Polarity and the real off-state
+
+Use one of the following **candidate profiles**, selected only after visual confirmation. The MODE2 values are derived configurations, not observations about this particular lamp:
+
+| Profile | External stage is on when | Electrical output while parked | MODE2 | Interpretation |
+|---|---|---|---:|---|
+| `active_high` | Controller output is HIGH | LOW | `0x14` | Totem-pole, inverted logical LED drive, disabled outputs LOW |
+| `active_low` | Controller output is LOW | HIGH | `0x05` | Totem-pole, non-inverted logical LED drive, disabled outputs HIGH |
+
+These profiles are calculated from NXP's output-control rules. In each profile, the driver must make application intensity zero correspond to actual light off, including LEDOUT's non-PWM states. Do not invert PWM duty a second time after selecting the matching INVRT setting. [S7]
+
+The wizard must first read the current disabled-output configuration and ask whether the lamp is actually dark. Any proposed change of parking level must be an explicit installer action, not an unattended scan through full-on possibilities. If neither common profile produces a real all-off state, report the concrete contradiction; do not declare the hardware configured or make up a polarity. This could indicate an additional enable path, mixed stages, or a power/wiring issue.
+
+A HIGH OE line is only a useful kill mechanism **after** the chosen disabled-output state has been established and programmed. Before calibration, retain OE HIGH and do not autonomously animate the lamp. An unknown parking/polarity state can produce full light; a nominal “5%” PWM test is not guaranteed to be dim with the wrong polarity.
+
+Firmware cannot guarantee the lamp's output during ROM boot or before it can write the controller's power-on defaults. Optimize initialization for early output control, but do not promise that software can eliminate every pre-initialization flash.
+
+### 5.4 Normal driver operation
+
+Implement a small driver with explicit operations for discovery, configuration/readback, setting a complete intensity frame, parking, and reporting errors.
+
+Required behavior:
+
+- Keep all unused outputs at the verified off-state. Do not assume that only LED0 and LED1 matter.
+- Maintain a shadow frame for all 16 channels. Application intensities are normalized to `0…1000` permille.
+- Use individual PWM only; support exact off and full-on states using the appropriate LEDOUT encoding. For intermediate intensities, calculate eight-bit duty using the datasheet's denominator, not an assumed 12-bit range.
+- Change outputs coherently using the appropriate auto-increment transaction and STOP-update configuration. When changing output modes or reinitializing, park first, load the complete state, then enable.
+- Do not continuously retransmit an unchanged frame. PWM generation belongs to the PCA9635, not the ESP scheduler or LEDC peripheral.
+- Read back critical setup registers using masks for writable bits. Do not reject valid MODE1 reads because its auto-increment status bits differ from a literal byte written earlier.
+- Keep I²C access serialized. Use a finite, small timeout, such as 20 ms per transaction, with bounded retry/recovery rather than an infinite loop.
+- On an operational write failure, release OE, latch a hardware fault, and attempt limited bus recovery. Reconfigure/read back the controller after recovery and remain off until a fresh explicit on command.
+- Never use a reset loop to hide repeated I²C failures or brownouts.
+
+## 6. One-time installation setup in the final image
+
+Provide a guided host tool, `tools/setup.py`, using the same commands available in the device's USB console. It must not require recompiling the application to save results.
+
+The sequence is:
+
+**Connect and inspect.** Show chip/board identity, firmware/build revisions, I²C candidates, raw controller configuration, and calibration status. Resolve the individual address as described above.
+
+**Establish off.** Confirm the parking state and active-high/active-low profile. All later timed tests must return to this verified state. Do not begin channel testing before that confirmation.
+
+**Identify channels.** Briefly exercise one channel at a time at an initially small logical duty, such as 5%, for 500 ms. Return to off before asking for a response. Let the user answer `warm`, `cool`, `none`, `repeat`, or `abort`. Permit an explicit increase up to 20% for visibility. The test timeout must execute on the ESP, not depend on a host process sending an off command.
+
+Each channel has one role: warm, cool, or unused. Multiple channels may belong to either bank. A “none” observation does not prove electrical disconnection; store the result as unused for this installation. Do not autonomously test arbitrary combinations or enable both complete banks at full duty.
+
+**Choose presets and brightness.** Preview the two complete banks at the fixed default brightness, then let the installer set one preferred brightness. Permit choosing two warm/cool mix ratios without adding variable-temperature controls to Matter. Default ratios remain pure warm and pure cool.
+
+**Validate and commit.** Require at least one warm and one cool channel, no overlapping channel masks, a confirmed off profile, valid ranges, and a verified address. Preview Warm, Off, Cool, Off. Save only after explicit confirmation. Read the saved record back and display its checksum/version. Export a small JSON backup to the host.
+
+The final save transitions the existing firmware into normal operation. It does not initiate a reflash or require physical rewiring. No actual channel numbers should be prefilled as confirmed in source code or sample configuration.
+
+### Installation and service isolation
+
+While setup is active, reject ordinary Matter on commands with a meaningful error. Off/abort remains available. A normal application connection loss must not leave a diagnostic pulse running: its local timeout parks outputs independently.
+
+When an established device re-enters service mode, first turn it off. Configuration changes use a temporary working copy and explicit commit. Cancellation leaves the last committed installation record intact.
+
+## 7. Preset model and output computation
+
+Represent each bank as a 16-bit channel mask. Keep preset calculation independent of both the I²C transport and Matter code.
+
+Let:
+
+- `B` = fixed brightness in permille, `0…1000`;
+- `W` = selected preset's warm fraction in permille, `0…1000`;
+- `warm_duty = round(B * W / 1000)`;
+- `cool_duty = B - warm_duty`.
+
+Apply the corresponding bank duty to every member of that bank. Every other output is off. Using subtraction for the second bank keeps the sum exactly equal to the selected electrical-duty budget after rounding.
+
+This assumes similarly functioning channels within each bank and is an electrical mixing policy, not a claim of constant measured lumens or linear Kelvin mixing. Defaults avoid mixing altogether. Do not invent per-channel gains or claim calibrated color accuracy.
+
+Persist a versioned, range-checked record equivalent to:
+
+```text
+schema_version
+individual_i2c_address
+output_profile                  # active_high | active_low
+warm_channel_mask
+cool_channel_mask
+fixed_brightness_permille        # default 300 until installer chooses
+warm_preset_warm_fraction        # default 1000
+cool_preset_warm_fraction        # default 0
+polarity_and_off_confirmed
+installation_complete
+record_generation
+integrity_check
+```
+
+Serialize explicitly; do not dump a C++ struct with compiler padding as an undocumented file format. A missing, corrupt, or incompatible record places the application in setup-required state, not maximum brightness. Saving a record must not also alter Matter credentials.
+
+## 8. Matter endpoint behavior
+
+### 8.1 Data model
+
+Create the root node and two standard **On/Off Light** endpoints using the pinned SDK's device-type constructors. Include the required clusters/features for that device type, not a hand-picked incomplete cluster list. Do not copy an extended-color-light example unchanged.
+
+Create endpoints in a stable order: Warm first, Cool second. Record and expose their actual endpoint IDs. Use the returned IDs rather than scattering assumptions that they must be `1` and `2`.
+
+Provide suitable fixed labels/names, but do not assume a particular controller will show two tiles, preserve custom labels, or support a desired grouping presentation. Include a short controller-neutral pairing explanation and endpoint mapping in the README.
+
+### 8.2 Single authoritative state
+
+The application has one normal state: `OFF`, `WARM`, or `COOL`. Derive both Matter OnOff attributes from it. Never treat them as two independent physical power channels.
+
+| Incoming request | Result |
+|---|---|
+| Warm ON | Select WARM; Warm reports on, Cool reports off |
+| Cool ON | Select COOL; Cool reports on, Warm reports off |
+| Warm OFF while WARM | OFF |
+| Cool OFF while COOL | OFF |
+| Warm OFF while COOL | Remain COOL; Warm was already off |
+| Cool OFF while WARM | Remain WARM; Cool was already off |
+| Toggle active endpoint | OFF |
+| Toggle inactive endpoint | Select that endpoint's preset |
+| Global service `off` | OFF regardless of selected preset |
+
+Serialize requests. The last processed ON command wins; an OFF command for an inactive preset must not inadvertently extinguish the active one. Repeated ON commands are idempotent. Ensure the same rules hold for group commands, SDK-generated timed off commands, and any scene features that the chosen device type actually exposes.
+
+### 8.3 Attribute synchronization and threading
+
+Use the SDK's attribute callback model. Its documented PRE_UPDATE path can reject an update when a bounded driver operation fails. [S2]
+
+Have one control owner serialize hardware changes from Matter and USB. Do not perform long calibration waits, scans, NVS commits, or network operations while holding the Matter stack lock. Ordinary frame updates are small; either execute them with a bounded synchronous path or use an explicit queued request/completion design with truthful fault reporting.
+
+After a successful preset selection, update the opposite endpoint's OnOff attribute through supported SDK APIs on the correct stack thread. Guard internal reconciliation against callback recursion. Do not directly change raw attribute storage or call Matter APIs from a timer/ISR.
+
+Maintain desired state, applied state, and hardware fault separately. Do not acknowledge a known failed hardware write as successful actuation. If a failure occurs after a command has already been accepted, publish the reconciled state and fault diagnostics rather than silently leaving stale success visible.
+
+### 8.4 Restart, identification, and outages
+
+Every MCU restart begins off, even if Matter's stored attributes previously said on. Retain preset definitions and commissioning, but reconcile visible on/off state before accepting normal commands. Do not advertise a configurable startup policy that the implementation ignores.
+
+Implement Identify deliberately: a short bounded pulse sequence at no more than the installation brightness, only after calibration, followed by restoration of the current requested state. Off and newer user commands cancel the effect. Do not use high-power startup or pairing flash animations.
+
+During Wi-Fi or controller loss, retain the current output and let the stack reconnect with backoff. Do not erase fabrics, power-cycle the lamp, or repeatedly reopen commissioning because an access point is temporarily unavailable. Leave deep sleep disabled for this always-powered accessory and its USB service interface.
+
+## 9. Commissioning and local access
+
+Use ESP-Matter's supported BLE/Wi-Fi commissioning, fabric storage, and multi-admin functionality. Do not implement a custom BLE provisioning protocol or hardcode Wi-Fi credentials in the firmware.
+
+For this DIY unit, use the SDK's supported development/test attestation path. Keep certificate identities, VID/PID, and configuration consistent. Do not claim the lamp is commercially Matter-certified or invent production credentials.
+
+Generate valid per-installation setup credentials through the SDK's supported tooling/provider configuration. Keep them stable across ordinary reboots and flashes. The commissioning-data provider must agree with the actual pairing code and SPAKE2+ material; do not merely display a random passcode while leaving the stack's verifier unchanged. [S2]
+
+The host tooling must retrieve the actual onboarding payload and manual pairing code and generate a local QR image/file from that payload. No QR-generation website is needed. Include those outputs in a private installation handoff, not a public source repository. Warn in the README that a controller may show an uncertified/test-accessory prompt; do not promise every ecosystem accepts every development attestation configuration.
+
+Uncommissioned devices should open a finite commissioning window and show how to reopen it over USB. Commissioning is permitted only once installation is complete, or must explicitly reject light activation until then. A commissioned device should not run an unrestricted permanent commissioning window.
+
+Do not create a web server, unauthenticated network console, SoftAP dashboard, or cloud dependency. USB is the installation/service interface; Matter is the network control interface.
+
+## 10. USB command contract
+
+These are **commands to implement**, not claims that they already exist in ESP-IDF. A small `esp_console` command family named `keylight` is sufficient. Support a machine-readable JSON response mode for the host helper, and a readable interactive mode.
+
+| Command | Required purpose |
+|---|---|
+| `keylight status [--json]` | Build IDs, chip/flash info, calibration, address, endpoint IDs, applied state, fault, reset reason, Wi-Fi status/RSSI, heap statistics |
+| `keylight setup` | Enter exclusive setup mode and explain the guided flow |
+| `keylight scan [--extended]` | Bounded read/probe discovery; no reset sweep |
+| `keylight address <7-bit-hex>` | Select a candidate and verify it |
+| `keylight registers` | Read relevant controller registers without changing outputs |
+| `keylight profile <active_high|active_low>` | Explicitly apply candidate parking/output configuration in setup mode |
+| `keylight confirm-off` | Record installer confirmation of the real off-state |
+| `keylight pulse <channel> [permille] [milliseconds]` | Bounded single-channel test after off confirmation |
+| `keylight channel <0..15> <warm|cool|unused>` | Assign a channel in the working configuration |
+| `keylight brightness <0..1000>` | Set the installation brightness; setup/service only |
+| `keylight mix <warm|cool> <warm-fraction-permille>` | Set one preset's mix; setup/service only |
+| `keylight preview <warm|cool> [milliseconds]` | Bounded preset preview during installation |
+| `keylight commit` | Validate, persist, verify, and exit setup |
+| `keylight cancel` | Park and discard uncommitted setup changes |
+| `keylight warm` / `cool` / `off` | Local control through the same normal-state engine |
+| `keylight export` / `import` | Versioned installation JSON backup/restore; import validates before commit |
+| `keylight pairing` | Actual onboarding payload/manual code; local USB only |
+| `keylight commission` | Open the supported commissioning window |
+| `keylight reset matter CONFIRM` | Remove network/fabrics using SDK facilities, preserving lamp calibration |
+| `keylight reset calibration CONFIRM` | Clear installation configuration and park; do not silently erase fabrics |
+| `keylight reset all CONFIRM` | Explicit full application reset with a clear description of what is erased |
+
+Do not include a destructive “clear everything” command disguised as a normal reconnect or rescan.
+
+The interactive `off`/abort path must be easy to invoke and must preempt a pending diagnostic sequence. If a machine-readable sequence depends on a host connection, include a device-side timeout/lease. The USB console must not block startup while waiting for a terminal to connect. Enable the primary bidirectional USB console, not just secondary USB log output. [S4]
+
+## 11. Persistence, faults, and observability
+
+Use a dedicated NVS partition or an equivalently explicit storage separation for lamp calibration. SDK fabric resets must be tested not to erase it. NVS supports named partitions; use the appropriate partition-specific APIs. [S8]
+
+Store settings only on explicit installation commits. Normal light switching must not write the calibration record or repeatedly rewrite flash. Read back a newly committed record and validate version/ranges/integrity on every boot.
+
+Minimum application states:
+
+```text
+SETUP_REQUIRED -> SETUP_ACTIVE -> READY_OFF <-> READY_WARM / READY_COOL
+                                         \-> HARDWARE_FAULT
+```
+
+Networking state is independent. A Wi-Fi outage is not a calibration failure or a hardware fault.
+
+On a hardware fault, park outputs using the last verified profile, report the specific failed operation/address, and keep the USB console and networking responsive where possible. Retry a bounded number of times, then wait rather than cycling indefinitely. After recovery, stay off until explicitly commanded on.
+
+Log reset reason, firmware and dependency versions, detected flash size, selected address, saved profile and channel masks, NVS validation failures, I²C failures/recoveries, commissioning events, and state changes. Avoid dumping secret keys or routine commissioning credentials into general logs. Provide pairing data only through the explicit local command/setup flow.
+
+Report only available telemetry. There are no connected voltage/current/light sensors; do not label fixed constants or inferred values as live measurements. Measure free heap, minimum free heap, and task stack high-water marks during actual hardware acceptance rather than claiming headroom from an example build.
+
+## 12. Suggested implementation structure
+
+Keep the codebase compact. These are responsibilities, not a requirement for a large generic class hierarchy:
+
+```text
+keylight/
+  CMakeLists.txt
+  sdkconfig.defaults
+  partitions.csv
+  dependencies.lock / documented pinned submodules
+  main/
+    app_main.cpp                 # early park, configuration, runtime startup
+    board_config.h               # GPIO4 / GPIO5 / GPIO6; board identity
+    keylight_driver.cpp/.h       # PCA9635 transport and frames
+    keylight_state.cpp/.h        # OFF/WARM/COOL and pure preset calculation
+    keylight_config.cpp/.h       # validation, serialization, NVS
+    keylight_matter.cpp/.h       # endpoints, callbacks, reconciliation
+    keylight_console.cpp/.h      # USB commands and guided-setup state
+  tools/
+    bootstrap.sh                 # compatible, pinned SDK setup
+    build.sh
+    flash.py                     # detect, validate, flash; no implicit erase
+    setup.py                     # one-image installation assistant
+  tests/
+    ...                          # pure logic and mocked I²C/SDK tests
+  docs/
+    BUILD_AND_FLASH.md
+    INSTALL_AND_PAIR.md
+    HARDWARE_AND_CONFIG.md
+    TEST_REPORT.md
+  README.md
+```
+
+Reuse SDK infrastructure for Matter, USB, timers, NVS, and task scheduling. Do not port Matter to another runtime or create a custom firmware updater.
+
+## 13. Verification and acceptance
+
+### Automated tests required in the delivered repository
+
+Test the parts that can actually be established without the physical lamp:
+
+- Pin assignments remain GPIO4/5/6 and are not overridden by example board support.
+- Frame encoding, both polarity profiles, exact off/full-on, intermediate PWM rounding, LEDOUT packing, and readback masks.
+- Discovery distinguishes an individual address from an all-call alias; ambiguous candidates do not trigger broadcast writes.
+- Unused outputs remain off; warm/cool masks cannot overlap or exceed 16 channels.
+- Preset math preserves the duty budget; default presets are pure warm and pure cool.
+- All transitions in section 8, inactive OFF behavior, toggles, idempotent ON, serialized competing requests, and reconciliation recursion protection.
+- Missing/corrupt configuration, canceled setup, interrupted save, reset scopes, and configuration import validation.
+- Pulse expiry, abort, host disconnect, timer/control-thread ordering, and bounded I²C failure handling.
+- Reboot starts off; a stale stored Matter on-state cannot illuminate the lamp during application initialization.
+- Full image and partition layout fit the detected/declared flash capacity; clean reproducible build succeeds.
+
+Use real assertions and a mock transport recording I²C transactions. Merely compiling or asserting `true` does not test these requirements.
+
+### One installation acceptance session on the actual lamp
+
+The provided host tool and README must make it straightforward to verify:
+
+1. USB communication and correct chip/flash identification.
+2. Individual address, verified off profile, and every used warm/cool channel.
+3. Warm, Cool, and Off at the selected fixed brightness, with the two Matter endpoint states agreeing with the lamp.
+4. Commissioning, commands from the intended controller, power-cycle persistence, reconnect after AP loss, and calibration retention through a Matter-only reset.
+5. No persistent brownout/reset loop during commissioning or normal Wi-Fi use; measured memory statistics recorded.
+6. Service pulse timeout and off/abort behavior, followed by ordinary operation with USB removed.
+
+Do not require destructive fault injection, an oscilloscope, extra sensors, or a new PCB for acceptance. Do not claim optical flicker/current/thermal characteristics were measured when they were not.
+
+Distinguish **built**, **unit-tested**, and **verified on Michael's actual lamp** in `TEST_REPORT.md`. A remote implementation agent without the lamp must leave the hardware results explicitly pending, while still delivering the complete firmware and setup tools—not a partial implementation.
+
+## 14. Required delivery
+
+Deliver the complete source repository, pinned dependencies, successful build log, automated test results, and flashable artifacts with a manifest of file names, offsets, target, and checksums. Include the merged image when supported by the chosen tooling, but derive offsets from the actual build rather than guessing them.
+
+The first-run instructions must be a concrete sequence: connect with correct power isolation, detect/flash the complete image, run the setup helper, confirm polarity and visible channels, choose brightness, save, and pair using the actual onboarding code. After setup there must be no mandatory code edits or second firmware image.
+
+The final installation export must include the actual address, profile, channel masks, fixed brightness, two mixes, and endpoint IDs. Keep pairing secrets in a separate private artifact.
+
+Do not change the hardware mapping, require another ESP board, introduce a buck converter, silently pick unmeasured channel numbers, or replace the requested finished implementation with a list of future tasks.
+
+## Sources and evidence
+
+The wiring and measured values in section 2 come from the user's completed three-page probing worksheet and the finalized **Elgato_Key_Light_C3_Wiring_Field_Guide.pdf** in this conversation. They are specific to this board; the specification is self-contained so an implementation agent does not need those attachments to recover the five-wire map.
+
+Official sources consulted on 28 September 2026:
+
+- **[S1] ESP-Matter release/v1.6 README**, compatible ESP-IDF/connectedhomeip revisions: <https://github.com/espressif/esp-matter/blob/release/v1.6/README.md>. Read through the GitHub connector; this release README specifies ESP-IDF v5.5.5. Resolve and pin the full source commit at implementation time.
+- **[S2] Espressif ESP-Matter development guide**, endpoints, attribute callbacks, console, commissioning and factory providers: <https://docs.espressif.com/projects/esp-matter/en/latest/esp32c3/developing.html>. Consult matching source in the pinned release when APIs differ from latest documentation.
+- **[S3] ESP32-C3 datasheet**, chip capabilities and GPIO multiplexing: <https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf>.
+- **[S4] ESP-IDF v5.5.5 USB Serial/JTAG console guide**: <https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c3/api-guides/usb-serial-jtag-console.html>.
+- **[S5] ESP-IDF v5.5.5 I²C master documentation**: <https://docs.espressif.com/projects/esp-idf/en/v5.5.5/esp32c3/api-reference/peripherals/i2c.html>.
+- **[S6] ESP-Matter C3 RAM/flash optimization guide**: <https://docs.espressif.com/projects/esp-matter/en/latest/esp32c3/optimizations.html>. Treat published numbers as examples, not measurements of this application.
+- **[S7] NXP PCA9635 datasheet, Rev. 7.1**, especially sections 7.1–7.8 and tables 6, 7, 11, 14–16: <https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf>.
+- **[S8] ESP-IDF NVS documentation**, named partitions and APIs: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/api-reference/storage/nvs_flash.html>.
+
+Everything labeled a default, proposed profile, application policy, algorithm, test, or required deliverable is a design decision of this specification—not a claim that the original Elgato firmware behaved that way or that unperformed hardware tests passed.
