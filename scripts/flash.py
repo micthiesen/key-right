@@ -130,10 +130,11 @@ def main(arguments=None):
     mode.add_argument("--check", action="store_true", help="build and check image/partition fit without a connected board")
     mode.add_argument("--check-stack", type=Path, metavar="ELF", help="check the linked C3 stack reservation without building or device access")
     parser.add_argument("--bench", action="store_true", help="select the simulated-output image instead of the PCA image")
+    parser.add_argument("--radio-diagnostics", action="store_true", help="include a bounded Wi-Fi boot scan in the image")
     parser.add_argument("port", nargs="?", help="native USB port, such as /dev/cu.usbmodemPORT")
     args = parser.parse_args(arguments)
     if args.check_stack:
-        if args.port or args.bench:
+        if args.port or args.bench or args.radio_diagnostics:
             parser.error("--check-stack takes only an ELF path")
         check_stack(args.check_stack)
         return
@@ -151,6 +152,8 @@ def main(arguments=None):
         return
 
     binary, feature = ("key-right-bench", "bench-light") if args.bench else ("key-right", "hardware-light")
+    if args.radio_diagnostics:
+        feature += ",radio-diagnostics"
     # Pin both values so inherited Cargo environment variables cannot redirect a
     # fresh build while leaving an older ELF at the path subsequently flashed.
     run([

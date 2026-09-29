@@ -66,7 +66,8 @@ sh scripts/check-firmware.sh
 The host gate checks formatting, strict Clippy, Rust tests, simulator behavior,
 and the Python console, flash, and USB watcher helpers. The firmware gate runs
 application host tests, formatting and Clippy, release builds for the real and
-simulated C3 images, and a minimum 16 KiB linked main-stack check.
+simulated C3 images, the optional radio-diagnostic real image, and a minimum
+16 KiB linked main-stack check.
 These gates require no board or credentials. Use `cargo fmt --all` at the root
 and `cargo fmt` inside `firmware/app`. Record actual gate outcomes in
 [software validation](software-validation.md).
@@ -166,6 +167,15 @@ capture, `--duration 30` for a timed capture, or `--help` for other options.
 
 ### Flash helper
 
+For radio diagnosis, `sh scripts/flash.sh --radio-diagnostics PORT` keeps the
+complete light/Matter firmware and compares default, longer active, and passive
+boot scans before commissioning. Each reports up to 20 AP names, channels, RSSI
+and security modes, with a 15-second deadline. Scan logs may identify nearby
+networks; keep captures under `local/`.
+This does not join a network or change credentials. Reflash without the option
+to remove the boot scan. All chip, partition, stack and NVS-preservation checks
+still apply. Use `--radio-diagnostics --check` for an offline image check.
+
 The flash helper supports these separate operations:
 
 ```sh
@@ -200,6 +210,15 @@ Commissioning uses that code in Apple Home; no online QR service is required.
 BLE provides Wi-Fi credentials. No passcode or Wi-Fi credentials belong in the
 repository. The image uses development Matter identifiers and is a personal,
 uncertified accessory.
+
+Wi-Fi discovery uses 100–300 ms active dwell per channel. Before association,
+the driver scans for the requested SSID and uses its strongest result as a
+starting-channel hint, with all-channel association and no pinned BSSID. Empty
+or failed discovery falls back to all-channel association. Discovery and joining
+share the existing 30-second deadline; expiry recreates the radio controller.
+This addresses observed missed scan results, but successful Home commissioning
+must be confirmed on the actual board. The channel is only a scan-order hint
+per the [Espressif station configuration](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32c3/api-guides/wifi.html).
 
 Useful console commands:
 

@@ -19,6 +19,12 @@ cargo clippy --bin key-right-bench --features bench-light --locked -- -D warning
 cargo build --release --bin key-right-bench --features bench-light --locked
 python3 ../../scripts/flash.py --check-stack target/riscv32imc-unknown-none-elf/release/key-right-bench
 
+# Optional radio diagnostics still include the complete real-output application.
+cargo clippy --bin key-right --features hardware-light,radio-diagnostics --locked -- -D warnings
+cargo build --release --bin key-right --features hardware-light,radio-diagnostics --locked
+python3 ../../scripts/flash.py --check-stack target/riscv32imc-unknown-none-elf/release/key-right
+
+# Finish with the normal real image at its usual path.
 # Real stock PCA9635 adapter, independent of the commissioning bench simulation.
 cargo clippy --bin key-right --features hardware-light --locked -- -D warnings
 cargo build --release --bin key-right --features hardware-light --locked

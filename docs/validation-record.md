@@ -148,8 +148,47 @@ startup transients remain unverified.
 
 After completing the unloaded checks, `commissioning code` succeeded and opened
 the pairing window for the first board. The private code was returned to Michael
-without a serial capture file and is omitted here. Apple Home commissioning,
-Wi-Fi operation, and the tile controls are awaiting user testing.
+without a serial capture file and is omitted here. Home pairing subsequently
+failed; diagnosis and the pending retry are recorded below.
+
+### Apple Home pairing diagnosis
+
+Michael reported an initial attempt from his 5 GHz network, then corrected his
+iPhone to `SyNet-2G`. The first retained log reached BLE, attestation, AddNOC,
+and Wi-Fi scanning, with one connection attempt but no connected/IP-ready state.
+Some logs were dropped, so its exact radio error is unknown. A software reboot
+preserved NVS and opened a fresh BLE window without erasing data.
+
+The captured retry explicitly supplied `SyNet-2G`. After successful certificate
+setup and a three-result scan, the radio returned `NoAccessPointFound`, zero
+BSSID, and RSSI sentinel -128. This is not a measured weak signal. The failure
+preceded Wi-Fi association and DHCP; accepting the uncertified-accessory warning
+did not prevent progress through attestation. Capture: `local/pairing-retry.log`.
+
+Read-only UniFi checks found the intended AP online, SSID visible and enabled,
+2.4 GHz channel 1 / 20 MHz, WPA2-Personal/CCMP, and 18 associated clients. PMF,
+MAC filtering, client isolation, and fast roaming were off; the multicast
+enhancement retained after Stillair's testing was still on. The ESP was absent
+from current/historical client lists. No AP or network settings were changed.
+Stillair's documented `NoAccessPointFound` retry used the wrong SSID; its later
+multicast workaround followed successful association and is not yet implicated
+in this C3's failure.
+
+An optional full-application radio diagnostic build compared scans without
+joining. The first default 10–20 ms scan returned four APs and omitted the home
+SSID. A later default scan returned eight including `SyNet-2G` at -58 dBm;
+100–300 ms active and 300 ms passive scans each returned 20, also including it
+at -58 dBm on channel 1. All eight and all 20 per-scan records were captured;
+startup USB-log drops occurred outside those complete result lists. The nearby
+network names remain only in `local/radio-diagnostics.log`.
+
+The candidate changes ordinary discovery to 100–300 ms and adds a targeted scan
+before association, choosing a starting-channel hint and all-channel search.
+The 30-second total deadline and fallback when no AP is found remain bounded.
+This is a discovery reliability change, not a proven pairing fix. A fresh Home
+retry must establish association, IP readiness, commissioning completion, and
+tile behavior. The disconnected-LED Off/PCA checks still pass after diagnostic
+flashes; the light intent remains Off, level 57, 303 mired.
 
 ## LED-connected acceptance pending
 

@@ -71,6 +71,24 @@ snapshots and system logs were saved under ignored `local/` directories. No ESP
 USB device was present, so a physical ESP attachment event remains untested;
 these checks do not establish post-rework USB or PCA operation.
 
+## 2026-09-28 Wi-Fi discovery diagnosis
+
+Both software gates passed after extending discovery dwell and adding a targeted
+pre-association scan: 26 core/CLI Rust tests, 36 application host tests, and 29
+Python tests. The flash-helper regression checks that radio diagnostics retain
+the real-output image, chip/capacity and partition preflights, and NVS
+preservation. Real, simulated, and radio-diagnostic C3 images passed strict
+Clippy, release builds, and linked-stack checks. The normal real image reserves
+57,912 bytes; this does not measure runtime stack use.
+
+Review checked first-boot station initialization, scan cancellation and radio
+recreation at the existing 30-second deadline, fallback after a failed scan,
+and the channel hint's all-channel association semantics. The diagnostic image
+ran all three scans on the actual board and saw the intended AP at -58 dBm.
+Longer explicit scanning does not change the SDK's internal association scan
+timing. A fresh Apple Home attempt is still required to establish joining and
+commissioning; see [the physical record](validation-record.md).
+
 ## Stock-firmware evidence
 
 On 2026-09-23, offline emulation of the signed original firmware reproduced

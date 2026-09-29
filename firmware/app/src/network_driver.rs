@@ -20,6 +20,66 @@ use rs_matter_embassy::wireless::{
     BleDriver, BleDriverTask, WifiCoexDriver, WifiCoexDriverTask, WifiDriver, WifiDriverTask,
 };
 
+/// Optional bench evidence before commissioning, without credentials or a join.
+#[cfg(feature = "radio-diagnostics")]
+async fn diagnostic_scan(
+    controller: &mut esp_radio::wifi::WifiController<'_>,
+) -> Result<(), Error> {
+    use embassy_time::{with_timeout, Duration, Timer};
+    use esp_hal::time::Duration as RadioDuration;
+    use esp_radio::wifi::{
+        scan::{ScanConfig, ScanTypeConfig},
+        sta::StationConfig,
+        Config,
+    };
+    use rs_matter_embassy::matter::error::ErrorCode;
+
+    must!(controller.set_config(&Config::Station(StationConfig::default())));
+    let scans = [
+        ("default", ScanConfig::default()),
+        (
+            "active-long",
+            ScanConfig::default().with_scan_type(ScanTypeConfig::Active {
+                min: RadioDuration::from_millis(100),
+                max: RadioDuration::from_millis(300),
+            }),
+        ),
+        (
+            "passive",
+            ScanConfig::default()
+                .with_scan_type(ScanTypeConfig::Passive(RadioDuration::from_millis(300))),
+        ),
+    ];
+    for (label, config) in scans {
+        log::info!("RADIO {label} scan starting; no connection requested");
+        let config = config.with_max(20);
+        let aps = with_timeout(Duration::from_secs(15), controller.scan_async(&config))
+            .await
+            .map_err(|_| {
+                log::error!("RADIO {label} scan timed out after 15s");
+                Error::from(ErrorCode::TxTimeout)
+            })?
+            .map_err(|error| {
+                log::error!("RADIO {label} scan failed: {error:?}");
+                Error::from(ErrorCode::NoNetworkInterface)
+            })?;
+        log::info!("RADIO {label} scan: {} access points", aps.len());
+        for ap in aps {
+            log::info!(
+                "RADIO {label} ssid={:?} bssid={:02x?} channel={} rssi={} security={:?}",
+                ap.ssid,
+                ap.bssid,
+                ap.channel,
+                ap.signal_strength,
+                ap.auth_method
+            );
+            // Let the bounded USB log queue drain during a dense scan.
+            Timer::after(Duration::from_millis(20)).await;
+        }
+    }
+    Ok(())
+}
+
 /// A `WifiDriver` implementation for the ESP32 family of chips.
 pub struct EspWifiDriver<'d> {
     wifi_peripheral: esp_hal::peripherals::WIFI<'d>,
@@ -61,6 +121,9 @@ impl WifiDriver for EspWifiDriver<'_> {
         // Keep the radio awake to avoid power-save receive latency.
         must!(controller.set_power_saving(esp_radio::wifi::PowerSaveMode::None));
 
+        #[cfg(feature = "radio-diagnostics")]
+        diagnostic_scan(&mut controller).await?;
+
         task.run(
             esp_radio::wifi::Interface::station(),
             Controller::new(controller),
@@ -86,6 +149,9 @@ impl WifiCoexDriver for EspWifiDriver<'_> {
 
         // Keep the radio awake to avoid power-save receive latency.
         must!(controller.set_power_saving(esp_radio::wifi::PowerSaveMode::None));
+
+        #[cfg(feature = "radio-diagnostics")]
+        diagnostic_scan(&mut controller).await?;
 
         task.run(
             esp_radio::wifi::Interface::station(),

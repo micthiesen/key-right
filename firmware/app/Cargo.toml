@@ -95,6 +95,8 @@ static_cell = "2"
 # Required explicitly: this image acknowledges simulated output only.
 bench-light = []
 hardware-light = []
+# Bench-only boot scan; normal Matter and physical-output control stay enabled.
+radio-diagnostics = []
 
 [profile.release]
 opt-level = "s"

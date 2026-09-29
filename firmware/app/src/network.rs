@@ -50,8 +50,8 @@ async fn deadline<T>(
 }
 use core::cell::Cell;
 
-use esp_radio::wifi::scan::ScanConfig;
-use esp_radio::wifi::sta::StationConfig;
+use esp_radio::wifi::scan::{ScanConfig, ScanTypeConfig};
+use esp_radio::wifi::sta::{ScanMethod, StationConfig};
 use esp_radio::wifi::{AuthenticationMethod, Config, WifiController, WifiError};
 
 use rs_matter_embassy::matter::dm::clusters::net_comm::{
@@ -68,6 +68,15 @@ use rs_matter_embassy::matter::utils::sync::blocking::Mutex;
 use rs_matter_embassy::matter::utils::sync::{DynBase, IfMutex};
 
 pub struct Controller<'a>(IfMutex<WifiController<'a>>, Mutex<Cell<bool>>);
+
+// The SDK's 10–20 ms active dwell missed the installed AP during C3 bench
+// commissioning. Keep discovery long enough to receive delayed probe replies.
+fn discovery_scan() -> ScanConfig {
+    ScanConfig::default().with_scan_type(ScanTypeConfig::Active {
+        min: esp_hal::time::Duration::from_millis(100),
+        max: esp_hal::time::Duration::from_millis(300),
+    })
+}
 
 impl<'a> Controller<'a> {
     pub const fn new(controller: WifiController<'a>) -> Self {
@@ -88,7 +97,7 @@ impl Controller<'_> {
             .map_err(to_ctl_err)?;
         log::info!("Wifi configuration updated for scanning");
 
-        let mut scan_config = ScanConfig::default();
+        let mut scan_config = discovery_scan();
         if let Some(network) = network.filter(|n| !n.is_empty()) {
             scan_config = scan_config.with_ssid(core::str::from_utf8(network).unwrap_or("???"));
         }
@@ -154,12 +163,39 @@ impl Controller<'_> {
             });
         }
 
-        ctl.set_config(&Config::Station(
-            StationConfig::default()
-                .with_ssid(ssid)
-                .with_password(pass.into()),
-        ))
-        .map_err(to_ctl_err)?;
+        // Find the requested network before the driver's association scan. A
+        // channel is a starting hint, not a pinned BSSID; roaming remains possible.
+        // Failed discovery still permits a normal all-channel connection attempt.
+        let scan = discovery_scan().with_ssid(ssid);
+        let channel = match ctl.scan_async(&scan).await {
+            Ok(aps) => aps
+                .into_iter()
+                .max_by_key(|ap| ap.signal_strength)
+                .map(|ap| {
+                    log::info!(
+                        "Wifi target found: channel={} rssi={}",
+                        ap.channel,
+                        ap.signal_strength
+                    );
+                    ap.channel
+                }),
+            Err(error) => {
+                log::warn!("Wifi target scan failed: {error:?}; trying connection anyway");
+                None
+            }
+        };
+        if channel.is_none() {
+            log::warn!("Wifi target not seen; trying all-channel connection");
+        }
+        let mut station = StationConfig::default()
+            .with_ssid(ssid)
+            .with_password(pass.into())
+            .with_scan_method(ScanMethod::AllChannels);
+        if let Some(channel) = channel {
+            station = station.with_channel(channel);
+        }
+        ctl.set_config(&Config::Station(station))
+            .map_err(to_ctl_err)?;
         log::info!("Wifi configuration updated");
 
         ctl.connect_async().await.map_err(to_ctl_err)?;

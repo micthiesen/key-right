@@ -88,6 +88,22 @@ class PreflightTests(unittest.TestCase):
                 flash.main(["/dev/fake"])
         self.assertNotIn("flash", [call.args[0][1] for call in run.call_args_list])
 
+    def test_radio_diagnostics_retains_hardware_and_all_flash_preflights(self):
+        def execute(arguments, **_kwargs):
+            if arguments[1] == "board-info":
+                return "Chip type: esp32c3\nFlash size: 4MB\n"
+            if arguments[1] == "save-image":
+                Path(arguments[-1]).write_bytes(bytes(256))
+            return ""
+
+        with patch.object(flash.shutil, "which", return_value="espflash"), patch.object(flash, "run", side_effect=execute) as run:
+            flash.main(["--radio-diagnostics", "/dev/fake"])
+        calls = [call.args[0] for call in run.call_args_list]
+        self.assertEqual([call[1] for call in calls], ["build", "board-info", "save-image", "flash"])
+        self.assertEqual(calls[0][calls[0].index("--features") + 1], "hardware-light,radio-diagnostics")
+        self.assertTrue(calls[-1][-1].endswith("/key-right"))
+        self.assertNotIn("--erase-data-parts", calls[-1])
+
     def test_inherited_cargo_target_cannot_select_a_stale_image(self):
         def execute(arguments, **_kwargs):
             if arguments[1] == "board-info":
