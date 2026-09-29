@@ -7,7 +7,7 @@ use crate::commissioning::{qr_payload, DiscoveryName};
 use crate::commissioning_ble::NamedBle;
 use crate::network_driver::EspWifiDriver;
 use embassy_futures::join::join3;
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use esp_bootloader_esp_idf::partitions::PARTITION_TABLE_MAX_LEN;
 use esp_hal::peripherals::{ADC1, BT, FLASH, RNG, WIFI};
 use esp_hal::rng::{Trng, TrngSource};
@@ -54,7 +54,6 @@ const COLOR_TEMPERATURE_LIGHT: DeviceType = DeviceType {
     dtype: 0x010c,
     drev: 4,
 };
-const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 const NODE: Node = Node {
     endpoints: &[
@@ -87,7 +86,7 @@ pub async fn run<H: crate::runtime::Hardware>(
     let _entropy = TrngSource::new(entropy.0, entropy.1);
     let trng = Trng::try_new().expect("TRNG source is initialized");
     let mut partition_table = [0; PARTITION_TABLE_MAX_LEN];
-    let mut store = match persistent_store(flash, &mut partition_table) {
+    let mut store = match persistent_store(flash, &mut partition_table, || watchdog.feed()).await {
         Ok(store) => store,
         Err(error) => {
             halted(
@@ -98,7 +97,13 @@ pub async fn run<H: crate::runtime::Hardware>(
             .await
         }
     };
-    let passcode = match commissioning_passcode(&mut store, &trng) {
+    let passcode = match crate::boot::restore(
+        "Commissioning credential storage failed",
+        async || commissioning_passcode(&mut store, &trng),
+        || watchdog.feed(),
+    )
+    .await
+    {
         Ok(passcode) => passcode,
         Err(error) => {
             halted(
@@ -127,7 +132,7 @@ pub async fn run<H: crate::runtime::Hardware>(
         pid: TEST_PID,
         hw_ver: 1,
         hw_ver_str: "ESP32-C3_MINI_V1",
-        sw_ver: 1,
+        sw_ver: 2,
         sw_ver_str: env!("CARGO_PKG_VERSION"),
         device_type: Some(COLOR_TEMPERATURE_LIGHT.dtype),
         ..BasicInfoConfig::new()
@@ -155,10 +160,19 @@ pub async fn run<H: crate::runtime::Hardware>(
     );
     let mut weak_rand = crypto.weak_rand().expect("weak RNG from crypto provider");
 
-    // Restore fabrics and network settings before starting the transport.
-    if let Err(error) = stack.load(&mut store).await {
+    // Retry before publishing the stack. Pinned loaders reset fabrics, basic
+    // settings, time and networks before each reload; partial loads cannot
+    // duplicate fabrics. No application erase is requested; the pinned storage
+    // backend may repair pages while reading them.
+    if let Err(error) = crate::boot::restore(
+        "Matter state read failed",
+        async || stack.load(&mut store).await,
+        || watchdog.feed(),
+    )
+    .await
+    {
         halted(
-            "Matter state could not be restored; NVS was preserved",
+            "Matter state could not be restored; no application erase requested",
             error,
             &mut watchdog,
         )
@@ -166,9 +180,16 @@ pub async fn run<H: crate::runtime::Hardware>(
     }
     let scenes = mk_static!(ScenesState<16>).init_with(ScenesState::init());
     let mut scene_buf = [0; KV_BUF_SIZE];
-    if let Err(error) = scenes.load_persist(&mut store, &mut scene_buf).await {
+    // Scenes decode into a temporary table, then replace the in-memory state.
+    if let Err(error) = crate::boot::restore(
+        "Scenes read failed",
+        async || scenes.load_persist(&mut store, &mut scene_buf).await,
+        || watchdog.feed(),
+    )
+    .await
+    {
         halted(
-            "Scenes could not be restored; NVS was preserved",
+            "Scenes could not be restored; no application erase requested",
             error,
             &mut watchdog,
         )
@@ -243,6 +264,8 @@ pub async fn run<H: crate::runtime::Hardware>(
             .open_basic_comm_window(900, &crypto, &ProvisioningNotify)
     };
     let transport = async {
+        let mut backoff = crate::recovery::RestartBackoff::default();
+        let mut queue_recovery = crate::network_tx::QueueRecovery::default();
         loop {
             if !stack.is_commissioned() {
                 if let Err(e) = open_commissioning() {
@@ -250,7 +273,8 @@ pub async fn run<H: crate::runtime::Hardware>(
                 }
             }
             crate::network::RESTART.reset();
-            let result = embassy_futures::select::select(
+            crate::network_driver::TX_STALL.reset();
+            let result = embassy_futures::select::select3(
                 stack.run_coex(
                     NamedBle::new(
                         EmbassyWifi::new(&mut driver, weak_rand, true, stack),
@@ -262,16 +286,37 @@ pub async fn run<H: crate::runtime::Hardware>(
                     crate::network::InterfaceMonitor,
                 ),
                 crate::network::RESTART.wait(),
+                crate::network_driver::TX_STALL.wait(),
             )
             .await;
+            let healthy_ms = crate::network::healthy_for_ms(Instant::now().as_millis());
+            queue_recovery.record_health(healthy_ms);
+            if matches!(result, embassy_futures::select::Either3::Third(()))
+                && queue_recovery.reboot_required()
+            {
+                let off_verified = runtime.prepare_reboot();
+                log::error!(
+                    "Transmit queue remained stuck after radio recreation; rebooting with saved state/fabrics preserved; off_registers_verified={off_verified}"
+                );
+                Timer::after(Duration::from_millis(250)).await;
+                esp_hal::system::software_reset();
+            }
+            let retry_secs = backoff.next_delay_secs(healthy_ms);
             crate::network::restarted();
-            log::error!("Matter stack exited: {result:?}; restarting in 5s, preserving intent");
-            Timer::after(RETRY_DELAY).await;
+            log::warn!("Matter transport exited: {result:?}; retry in {retry_secs}s; intent/fabrics preserved");
+            Timer::after(Duration::from_secs(retry_secs)).await;
         }
     };
     join3(
         transport,
-        crate::console::run(rx, &runtime, &pairing_code, pairing_qr, open_commissioning),
+        crate::console::run(
+            rx,
+            &runtime,
+            &pairing_code,
+            pairing_qr,
+            open_commissioning,
+            || stack.is_commissioned(),
+        ),
         presets::maintenance(&runtime, &light, || watchdog.feed()),
     )
     .await;
@@ -287,7 +332,8 @@ impl rs_matter_embassy::matter::dm::AttrChangeNotifier for ProvisioningNotify {
     fn notify_all_changed(&self) {}
 }
 
-/// Report setup/storage faults continuously without erasing pairing or inventing state.
+/// Report permanent setup/decoded-data faults without erasing pairing or inventing state.
+/// Storage I/O failures retry before reaching this path.
 async fn halted(
     reason: &str,
     error: Error,

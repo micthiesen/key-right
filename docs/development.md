@@ -4,11 +4,11 @@
 
 Key Right contains a portable `no_std` control/PCA9635 core, an in-memory host
 simulator, and a separate ESP32-C3 Matter workspace for the installed
-**ESP32-C3_MINI_V1**. The wired assembly has powered up and received the real
-firmware, with the LEDs disconnected. USB diagnostics worked before rework;
-after the PCA acknowledgement failure, Michael found the field guide's signal
-wiring wrong. After rework and adjusting the USB cable, the first board now
-passes powered PCA register checks; LEDs remain disconnected.
+**ESP32-C3_MINI_V1**. The first board has passed powered PCA checks, steady OE
+levels, unloaded connector Off/On/Off, Home power/brightness/temperature controls,
+and one cold power-cycle restoration. It retains both Home fabrics. Michael
+considers bench probing complete; LEDs reconnect during unpowered reassembly.
+Firmware 0.1.1 reporting/recovery hardening needs separate live verification.
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 
@@ -32,6 +32,8 @@ programmed disabled state; it is not an independent safety interlock.
 | `firmware/cli` | In-memory state simulator; no hardware or network I/O |
 | `firmware/app/src/device.rs` | Real C3 image entry point |
 | `firmware/app/src/device_matter.rs` | Real-image Matter, storage, and recovery integration |
+| `firmware/app/src/boot.rs` | Boot storage retries and stable commissioning credential |
+| `firmware/app/src/network_tx.rs` | Transmit-capacity monitoring on the existing network interface |
 | `firmware/app/src/main.rs` | Same runtime/Matter/console with simulated output |
 | `firmware/app/host-tests` | Application control and Matter logic with mock hardware/storage |
 | `scripts/device.py` | Native USB console client for Python 3 on macOS/Linux |
@@ -109,14 +111,15 @@ or charging-only cable is unsuitable. To use ordinary powered USB, disconnect
 all five lamp wires from the C3 first. Turning off or unplugging the lamp supply
 alone does not isolate the rail or signal paths.
 
-Keep the LEDs disconnected for initial work. Verify input polarity and record
-the bench PSU voltage/current limit; nominal 13 V goes only to the stock lamp
-input. Post-rework USB and PCA communication pass on the first board; bench
-power under radio load remains unverified. Record results in
+Nominal 13 V goes only to the stock lamp input. Keep the panels disconnected
+until unpowered reassembly. The first board's probing is complete; do not repeat
+continuity, OE, rail or connector measurements without contradictory evidence.
+The second board proceeds through chip/capacity preflight, flash and live tests
+without a new routine probing sequence. Record actual results in
 [the validation record](validation-record.md).
 
-Follow [bench bring-up](bench-bring-up.md) for the ordered first-power,
-read-only chip inspection, preflight, flash, and probing sequence. Install the
+Follow [bench bring-up](bench-bring-up.md) for chip inspection, preflight,
+flash, firmware checks and loaded acceptance. Install the
 pinned flasher and list USB ports:
 
 ```sh
@@ -189,9 +192,10 @@ builds and checks image/partition fit without a connected board. The default
 port command checks the connected device before flashing the real image.
 `--bench` explicitly selects the simulated image; it cannot validate the PCA.
 
-Once the image has passed its build checks and been flashed under the power
-rule above, verify USB `status`, issue local `off`, and inspect `registers` before
-connecting the LEDs. Request the actual stable per-device pairing code with:
+After flashing under the power rule above, inspect USB `status` and `verify`
+before changing output, so saved-state restoration remains observable. Issue
+and verify Off before unpowered reassembly. Preserve the first board's Home
+fabrics. For an uncommissioned second board, request its own pairing code with:
 
 ```sh
 python3 scripts/device.py --port PORT commissioning code
@@ -245,8 +249,9 @@ the driver scans for the requested SSID and uses its strongest result as a
 starting-channel hint, with all-channel association and no pinned BSSID. Empty
 or failed discovery falls back to all-channel association. Discovery and joining
 share the existing 30-second deadline; expiry recreates the radio controller.
-This addresses observed missed scan results, but successful Home commissioning
-must be confirmed on the actual board. The channel is only a scan-order hint
+The first board subsequently completed Home commissioning with both fabrics;
+the second board still needs its own commissioning. The channel is only a
+scan-order hint
 per the [Espressif station configuration](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32c3/api-guides/wifi.html).
 
 Useful console commands:
@@ -260,6 +265,9 @@ python3 scripts/device.py --port PORT temperature 303
 python3 scripts/device.py --port PORT on
 python3 scripts/device.py --port PORT off
 python3 scripts/device.py --port PORT reboot
+python3 scripts/device.py --port PORT test wifi
+python3 scripts/device.py --port PORT test network
+python3 scripts/device.py --port PORT test watchdog
 python3 scripts/device.py --port PORT --log local/usb.log monitor
 ```
 
@@ -267,6 +275,10 @@ python3 scripts/device.py --port PORT --log local/usb.log monitor
 reports intended and acknowledged state separately and marks physical output
 unmeasured. `level` accepts 1–254; `temperature` accepts 143–344 mired. Both
 retain the current power state. `on` restores that level and temperature.
+Healthy Matter attributes report the durable target during a transition;
+`status` still exposes the separately acknowledged intermediate frame. Known
+output/storage faults remain read errors. A WithOnOff level command at minimum
+level 1 turns Off; ordinary level commands preserve an Off target during its fade.
 Legacy USB shortcuts `on 1` and `on 2` select level `57` at 303 and 200 mired
 respectively and turn on; these do not create extra Matter endpoints.
 One serialized state owner handles both Matter and console commands. Close a
@@ -277,13 +289,15 @@ repeating it.
 The native USB connection is local diagnostics only. The protocol returns
 `KR OK` or `KR ERR`; it is not the handoff's proposed `keylight`/JSON interface.
 Matter state and durable power, level, and temperature intent survive normal
-resets. First boot defaults Off with level `57` and 303 mired. The lamp's saved
-Matter startup policy can override restored power intent. Version-3 intent
-records store power, level, and temperature. Migrating a version-2 preset record
-applies its two startup policies once, selects 303 or 200 mired at level `57`,
-and uses Restore as the new startup policy without erasing commissioning.
-Initial stock-Off setup and register readback do not prove that the physical
-lamp remains dark throughout startup.
+resets. Restore valid saved power by default; missing intent starts Off with
+level `57` and 303 mired. Explicit startup Off and startup level/temperature
+settings remain supported. New startup On/Toggle writes are rejected, and
+stored On/Toggle policies normalize to Restore. Version-3 records retain power,
+level and temperature. Version-2 preset migration retains saved power and the
+selected 303/200 mired temperature at level `57`, with the selected preset's
+explicit startup Off retained. Migration never erases commissioning.
+OE release and stock zero-PWM initialization minimize output once the ESP runs;
+they do not prove darkness before boot or under connected-panel startup.
 
 Output faults invalidate acknowledgement, attempt Off, and retry durable intent
 after five seconds; recovery does not require a new On command. Invalid stored
@@ -292,12 +306,38 @@ No physical flash or operational pass is claimed by the software checks.
 
 ## Recovery and validation limits
 
-Wi-Fi scans/connections have a 30-second deadline. An associated interface with
-no usable local IP for 60 seconds restarts the transport; IPv6 link-local counts
-as usable. Failed transports retry after 5 seconds. A 15-second watchdog handles
-stalled execution. Network retries preserve light intent. A Matter operation
-that hangs while the CPU and local IP stay healthy may evade these checks; this
-case still needs observation on the real device.
+Radio operations have a 30-second deadline. Three consecutive internal driver
+errors recreate the transport; expected association failures such as an absent
+AP do not count as internal errors. While associated, 60 seconds of failed RSSI
+queries or missing usable local IPv6 also recreate it. IPv6 link-local is usable;
+IPv4 alone is insufficient for Matter readiness.
+
+Transport retries wait 5, 10, 20, 40, then at most 60 seconds. The backoff resets
+only after 120 seconds of continuous local health, excluding known transmit
+backpressure. The guard uses the existing station interface and requires no
+Internet ping or traffic from Home. Sixty seconds without linked transmit
+capacity/progress recreates transport; another such stall after recreation
+resets the MCU, preserving durable intent and fabrics. Successful capacity or
+transmit progress clears the stall timer even under busy traffic. A 15-second
+watchdog covers stalled execution. Other hangs that leave these local signals
+healthy can still evade detection; live recovery evidence belongs in the
+validation record.
+
+Boot partition/credential/Matter/scene operations retry adapter-reported
+`StdIoError` with 5–60-second capped backoff. One-second async waits feed the
+watchdog and permit USB logging. Firmware requests no erase or factory reset
+and does not initialize output from invented state. The pinned storage adapter
+also maps corruption/buffer errors to `StdIoError` and may repair pages during
+reads. Tests establish logical fabric preservation, not identical physical NVS
+bytes. Malformed application/Matter records detected by decoding remain faults.
+
+On a commissioned board, `test wifi` requests a real station disconnect and
+normal reconnection; `test network` recreates the complete transport. Neither
+unpairs the board. Observe recovery through status and Home, including unchanged
+intent and fabrics. `test watchdog` requires settled, verified output and stalls
+the firmware task until the 15-second watchdog resets it. The PCA retains its
+previous frame during that stall; this is a recovery check, not an Off command.
+These commands have not yet established live recovery for firmware 0.1.1.
 
 The `bench-light` image uses the same runtime, Matter, console, and network
 paths with simulated output. Status identifies simulation and register values

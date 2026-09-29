@@ -13,8 +13,8 @@ use rs_matter_embassy::matter::dm::clusters::scenes::{
     SceneClusterHandler, SceneInvalidator, ScenesState,
 };
 use rs_matter_embassy::matter::dm::{
-    AsyncHandler, AttrId, Cluster, Dataver, HandlerContext, InvokeContext, InvokeReply,
-    MatchContext, ReadContext, ReadReply, WriteContext,
+    AsyncHandler, AttrChangeNotifier, AttrId, Cluster, Dataver, HandlerContext, InvokeContext,
+    InvokeReply, MatchContext, ReadContext, ReadReply, WriteContext,
 };
 use rs_matter_embassy::matter::error::{Error, ErrorCode};
 use rs_matter_embassy::matter::persist::KvBlobStoreAccess;
@@ -58,6 +58,13 @@ struct SceneDraft {
     duration_ms: u64,
     fields: u8,
 }
+pub(crate) struct ReportState {
+    revision: u32,
+    output: Option<LightState>,
+    scene_revision: u32,
+    dataver: u32,
+    remaining: u16,
+}
 impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
     pub fn new(
         runtime: &'a Runtime<K, H>,
@@ -89,7 +96,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
             .set(self.scene_revision.get().wrapping_add(1));
     }
     fn on(&self) -> Result<bool, Error> {
-        Ok(self.runtime.acknowledged()?.on)
+        Ok(self.runtime.reported()?.on)
     }
     pub fn power(&self, on: bool) -> Result<(), Error> {
         self.changed();
@@ -106,7 +113,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
             if let Some(level) = self
                 .on_level
                 .get()
-                .filter(|_| !self.runtime.acknowledged().is_ok_and(|state| state.on))
+                .filter(|_| !self.runtime.reported().is_ok_and(|state| state.on))
             {
                 self.runtime.set_level_transition(level, true, 0)?;
             }
@@ -167,8 +174,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
     }
     fn save_global_scene(&self) -> Result<(), Error> {
         if self.global_scene.get() {
-            self.global_scene_state
-                .set(Some(self.runtime.acknowledged()?));
+            self.global_scene_state.set(Some(self.runtime.reported()?));
             self.global_scene.set(false);
         }
         Ok(())
@@ -205,7 +211,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
             return Err(ErrorCode::Busy.into());
         }
         self.scene_draft.set(Some(SceneDraft {
-            target: self.runtime.acknowledged()?,
+            target: self.runtime.reported()?,
             duration_ms: 0,
             fields: 0,
         }));
@@ -350,7 +356,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
             )?;
             self.coupled_temperature.set(true);
         }
-        if with_on_off && raw > 0 {
+        if with_on_off && raw > Level::MIN.get() {
             self.global_scene.set(true);
         }
         Ok(())
@@ -409,7 +415,9 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         mask: level::OptionsBitmap,
         over: level::OptionsBitmap,
     ) -> Result<(), Error> {
-        if self.execute_level(with_on_off, mask, over)? {
+        // Target reporting already says Off during a fade to Off. Both Stop
+        // variants must still be able to freeze that in-progress transition.
+        if self.runtime.level_remaining_ms() != 0 || self.execute_level(with_on_off, mask, over)? {
             self.changed();
             self.runtime.stop_level_transition()?;
             if self.coupled_temperature.replace(false) {
@@ -501,47 +509,70 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         }
         Ok(())
     }
+    fn report_remaining(&self, index: usize) -> u16 {
+        remaining(match index {
+            1 => self.runtime.level_remaining_ms(),
+            2 => self.runtime.temperature_remaining_ms(),
+            _ => 0,
+        })
+    }
+    pub(crate) fn report_state(&self, index: usize) -> ReportState {
+        ReportState {
+            revision: self.runtime.snapshot().revision,
+            output: self.runtime.reported().ok(),
+            scene_revision: self.scene_revision.get(),
+            dataver: self.datavers[index].get(),
+            remaining: self.report_remaining(index),
+        }
+    }
+    /// Observe logical changes separately from the physical transition countdown.
+    pub(crate) fn poll_report(
+        &self,
+        ctx: &impl AttrChangeNotifier,
+        index: usize,
+        cluster: u32,
+        previous: &mut ReportState,
+    ) {
+        let next = self.report_state(index);
+        if index == 0 {
+            if next.output != previous.output
+                && !self
+                    .scene_intent
+                    .get()
+                    .is_some_and(|expected| next.output == Some(expected))
+            {
+                self.changed();
+            }
+            if previous.scene_revision != self.scene_revision.get() {
+                ctx.notify_cluster_changed(
+                    ENDPOINT,
+                    rs_matter_embassy::matter::dm::clusters::scenes::FULL_CLUSTER.id,
+                );
+            }
+        }
+        if next.revision != previous.revision || next.dataver != previous.dataver {
+            // The pinned IM notifier bumps the cluster data version itself.
+            ctx.notify_cluster_changed(ENDPOINT, cluster);
+        } else if next.remaining != previous.remaining {
+            let attribute = if index == 1 {
+                level::AttributeId::RemainingTime as u32
+            } else {
+                color::AttributeId::RemainingTime as u32
+            };
+            ctx.notify_attr_changed(ENDPOINT, cluster, attribute);
+        }
+        *previous = self.report_state(index);
+    }
     async fn report(
         &self,
         ctx: impl HandlerContext,
         index: usize,
         cluster: u32,
     ) -> Result<(), Error> {
-        let initial = self.runtime.snapshot();
-        let mut revision = initial.revision;
-        let mut previous_output = (initial.intended, initial.applied);
-        let mut scene_revision = self.scene_revision.get();
-        let mut dataver = self.datavers[index].get();
+        let mut previous = self.report_state(index);
         loop {
             Timer::after(Duration::from_millis(250)).await;
-            let snapshot = self.runtime.snapshot();
-            let next = snapshot.revision;
-            if index == 0 {
-                let output = (snapshot.intended, snapshot.applied);
-                if output != previous_output
-                    && !self.scene_intent.get().is_some_and(|expected| {
-                        snapshot.intended == expected && snapshot.applied.is_some()
-                    })
-                {
-                    self.changed();
-                }
-                previous_output = output;
-                if scene_revision != self.scene_revision.get() {
-                    ctx.notify_cluster_changed(
-                        ENDPOINT,
-                        rs_matter_embassy::matter::dm::clusters::scenes::FULL_CLUSTER.id,
-                    );
-                    scene_revision = self.scene_revision.get();
-                }
-            }
-            if next != revision {
-                self.datavers[index].changed();
-                revision = next;
-            }
-            if dataver != self.datavers[index].get() {
-                ctx.notify_cluster_changed(ENDPOINT, cluster);
-                dataver = self.datavers[index].get();
-            }
+            self.poll_report(&ctx, index, cluster, &mut previous);
         }
     }
 }
@@ -673,7 +704,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> level::ClusterAsyncHandler for LightHand
         self.report(ctx, 1, LEVEL_CLUSTER.id).await
     }
     async fn current_level(&self, _ctx: impl ReadContext) -> Result<Nullable<u8>, Error> {
-        Ok(Nullable::some(self.runtime.acknowledged()?.level.get()))
+        Ok(Nullable::some(self.runtime.reported()?.level.get()))
     }
     async fn remaining_time(&self, _ctx: impl ReadContext) -> Result<u16, Error> {
         Ok(remaining(self.runtime.level_remaining_ms()))
@@ -837,7 +868,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> color::ClusterAsyncHandler for LightHand
         self.report(ctx, 2, COLOR_CLUSTER.id).await
     }
     async fn color_temperature_mireds(&self, _ctx: impl ReadContext) -> Result<u16, Error> {
-        Ok(self.runtime.acknowledged()?.temperature.get())
+        Ok(self.runtime.reported()?.temperature.get())
     }
     async fn remaining_time(&self, _ctx: impl ReadContext) -> Result<u16, Error> {
         Ok(remaining(self.runtime.temperature_remaining_ms()))
@@ -1090,8 +1121,8 @@ impl<K: KvBlobStoreAccess, H: Hardware, S: AsyncHandler> AsyncHandler
             let stored = ctx.cmd().cmd_id == SceneCommandId::StoreScene as u32;
             let result = self.inner.invoke(ctx, reply).await;
             if stored && result.is_ok() {
-                // A scene captured during a transition describes the current
-                // frame, so later frames must invalidate it.
+                // Captures use the same destination as the readable attributes.
+                // A later target change, not a fade frame, invalidates the scene.
                 self.light.scene_intent.set(None);
             }
             return result;
@@ -1154,7 +1185,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> SceneClusterHandler for SceneLevel<'_, K
     ) -> Result<AttributeValuePairStructArrayBuilder<P>, Error> {
         avps.push_u8(
             level::AttributeId::CurrentLevel as _,
-            self.0.runtime.acknowledged()?.level.get(),
+            self.0.runtime.reported()?.level.get(),
         )
     }
     async fn apply<C: HandlerContext>(
@@ -1181,7 +1212,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> SceneClusterHandler for SceneTemperature
     ) -> Result<AttributeValuePairStructArrayBuilder<P>, Error> {
         avps.push_u16(
             color::AttributeId::ColorTemperatureMireds as _,
-            self.0.runtime.acknowledged()?.temperature.get(),
+            self.0.runtime.reported()?.temperature.get(),
         )?
         .push_u8(
             color::AttributeId::EnhancedColorMode as _,

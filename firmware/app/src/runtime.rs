@@ -43,6 +43,7 @@ pub struct Snapshot {
     pub output_failures: u32,
     pub storage_failures: u32,
     pub recoveries: u32,
+    /// Logical attributes or output availability changed; excludes fade frames.
     pub revision: u32,
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -161,46 +162,32 @@ fn decode_record(bytes: &[u8]) -> Result<SavedState, Fault> {
                     temperature,
                 },
                 startup: Startup {
-                    power,
+                    // Legacy On/Toggle policies must not turn a saved Off on.
+                    power: if power == 1 { 1 } else { 0 },
                     level: (startup_level != 255).then_some(startup_level),
                     temperature: startup_temperature,
                 },
-                migrated: false,
+                migrated: power > 1,
             })
         }
         // Convert the previous two-preset record without erasing Matter state.
-        // Apply its two startup policies once, then use restore for the new light.
-        [2, on @ 0..=1, preset @ 0..=1, one @ 0..=3, two @ 0..=3] => {
-            let mut selected = preset;
-            let mut power = on != 0;
-            for (slot, policy) in [(0, one), (1, two)] {
-                let next = match policy {
-                    0 => continue,
-                    1 => false,
-                    2 => true,
-                    _ => !(power && selected == slot),
-                };
-                if next {
-                    selected = slot;
-                    power = true;
-                } else if selected == slot {
-                    power = false;
-                }
-            }
-            Ok(SavedState {
-                intended: LightState {
-                    on: power,
-                    temperature: if selected == 0 {
-                        Preset::One.temperature()
-                    } else {
-                        Preset::Two.temperature()
-                    },
-                    ..LightState::default()
+        // Retain the saved power and selected temperature, not old On/Toggle overrides.
+        [2, on @ 0..=1, preset @ 0..=1, one @ 0..=3, two @ 0..=3] => Ok(SavedState {
+            intended: LightState {
+                on: on != 0,
+                temperature: if preset == 0 {
+                    Preset::One.temperature()
+                } else {
+                    Preset::Two.temperature()
                 },
-                startup: Startup::default(),
-                migrated: true,
-            })
-        }
+                ..LightState::default()
+            },
+            startup: Startup {
+                power: u8::from(if preset == 0 { one } else { two } == 1),
+                ..Startup::default()
+            },
+            migrated: true,
+        }),
         _ => Err(Fault::InvalidRecord),
     }
 }
@@ -214,12 +201,11 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         )
     }
     fn startup_intent(mut restored: LightState, startup: Startup) -> LightState {
-        restored.on = match startup.power {
-            1 => false,
-            2 => true,
-            3 => !restored.on,
-            _ => restored.on,
-        };
+        // Restore validated power intent unless the user explicitly chose Off.
+        // Missing or unreadable intent never becomes an assumed On.
+        if startup.power == 1 {
+            restored.on = false;
+        }
         if let Some(level) = startup.level {
             restored.level = Level::new(level.max(1)).expect("validated startup level");
         }
@@ -284,11 +270,21 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
             .applied()
             .ok_or_else(|| ErrorCode::InvalidState.into())
     }
+    /// Accepted destination for controllers, while the output adapter is healthy.
+    /// Fade frames remain available separately through `acknowledged` and `snapshot`.
+    pub fn reported(&self) -> Result<LightState, Error> {
+        let s = self.state.borrow();
+        if s.fault != Fault::None || s.controller.applied().is_none() {
+            return Err(ErrorCode::InvalidState.into());
+        }
+        Ok(s.target)
+    }
     pub fn prepare_reboot(&self) -> bool {
         let mut s = self.state.borrow_mut();
         let verified = s.hardware.shutdown().is_ok();
         s.controller.invalidate_applied();
         s.fault = Fault::Rebooting;
+        s.revision = s.revision.wrapping_add(1);
         verified
     }
     pub fn watchdog_test_ready(&self) -> Result<(), Error> {
@@ -314,20 +310,18 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         Ok(())
     }
     pub fn startup(&self) -> Option<StartUpOnOffEnum> {
-        match self.state.borrow().startup.power {
-            1 => Some(StartUpOnOffEnum::Off),
-            2 => Some(StartUpOnOffEnum::On),
-            3 => Some(StartUpOnOffEnum::Toggle),
-            _ => None,
-        }
+        (self.state.borrow().startup.power == 1).then_some(StartUpOnOffEnum::Off)
     }
     pub fn set_startup(&self, value: Option<StartUpOnOffEnum>) -> Result<(), Error> {
+        // Lighting requires StartUpOnOff. Null means Restore. Reject policies
+        // which could turn a valid saved Off into On after a reset.
         let mut startup = self.state.borrow().startup;
         startup.power = match value {
             None => 0,
             Some(StartUpOnOffEnum::Off) => 1,
-            Some(StartUpOnOffEnum::On) => 2,
-            Some(StartUpOnOffEnum::Toggle) => 3,
+            Some(StartUpOnOffEnum::On | StartUpOnOffEnum::Toggle) => {
+                return Err(ErrorCode::ConstraintError.into());
+            }
         };
         self.save_startup(startup)
     }
@@ -431,7 +425,11 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         s.retry_at = 0;
         if previous != s.controller.applied() {
             s.next_verify = now.saturating_add(5_000);
-            s.revision = s.revision.wrapping_add(1);
+            // Controllers report the destination, not each acknowledged fade frame.
+            // Becoming available again still changes their readable attributes.
+            if previous.is_none() {
+                s.revision = s.revision.wrapping_add(1);
+            }
         }
         if s.level_transition.is_some_and(|t| t.remaining(now) == 0) {
             s.level_transition = None;
@@ -552,7 +550,11 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         let current = s.controller.applied().unwrap_or(s.target);
         let target = LightState {
             level: Level::new(level.max(1)).unwrap(),
-            on: if with_on_off { level != 0 } else { current.on },
+            on: if with_on_off {
+                level > Level::MIN.get()
+            } else {
+                s.target.on
+            },
             ..s.target
         };
         let animate = duration_ms != 0 && (current.on || target.on);

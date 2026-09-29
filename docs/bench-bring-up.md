@@ -1,249 +1,178 @@
-# C3 bench bring-up
+# C3 firmware and live checks
 
-This sequence is for the wired **ESP32-C3_MINI_V1** and retained stock PCA9635,
-with the **LED panels disconnected** until the lamp is reassembled. The first
-powered USB identification, original-flash backup, and real firmware flash
-completed on 2026-09-28.
-Record each actual result and remaining check in
-[the validation record](validation-record.md); this guide is the procedure.
+This procedure is for the installed **ESP32-C3_MINI_V1** and retained stock
+PCA9635. The first board's bench probing is complete: corrected wiring,
+powered PCA readback, steady OE, unloaded connector Off/On/Off, Home controls,
+and one cold power-cycle restoration passed. It retains both Home fabrics.
+Do not repeat those measurements without new fault evidence.
 
-**Corrected U4 map:** Michael supplied the signal map in
-[hardware.md](hardware.md): top-row OE is fifth from left, SCL rightmost, and
-SDA second from right. The ESP ends remain correct. Keep bench power off and
-USB unplugged while moving the U4 wires on both boards. The powered steps below
-follow each board's rework and complete-path continuity checks; consult the
-[validation record](validation-record.md) for completed checks.
-The [component-side C3 photo](references/photos/esp32-c3-mini-v1.png) identifies
-the connector and buttons visually; it does not prove antenna routing or
-electrical wiring.
+Firmware 0.1.1 hardens target reporting, startup restoration and local recovery;
+it needs its own live verification. The second board proceeds through chip and
+capacity preflight, flashing, commissioning and live operation without another
+routine meter-probing sequence. Record each board's actual image and results
+in [the validation record](validation-record.md). Passing the first board does
+not establish the second board's behavior.
 
-## 1. Prepare without power
+## 1. Power and preparation
 
-- Keep the LED panels disconnected and the board on an insulated surface.
-- Check power and ground: J6/DEBUG regulated supply to `3.3`, J8/UART ground
-  to `G`; do not connect `5V`. Establish the corrected SDA/SCL/OE paths from the
-  actual printed ESP GPIO labels to PCA pins 27/26/23 with power removed.
-  Current firmware uses GPIO4/5/6 respectively and the ESP ends stay in place.
-  Use the corrected U4 map above, not the earlier field guide's pad positions.
-- Connect the bench PSU only to the stock lamp input with the confirmed
-  polarity. The nominal input is **13 V**. Never put 13 V on a C3 pad.
-  Use the bench PSU as the lamp's input source, with the ordinary adapter
-  disconnected. Record the chosen current limit; no current-limit setting has
-  yet been supplied, and the adapter's 4 A rating is not a bench setting.
-- With lamp wires attached, USB must have **VBUS/5 V blocked, data and ground
-  intact**. A charging-only cable or data blocker is unsuitable. Ordinary
-  powered USB requires disconnecting all five lamp wires from the C3, even if
-  the lamp supply is off. Remove USB before restoring those wires.
-- Run the software gates before flashing and record the commit and outcomes:
+With lamp wiring attached, use lamp/bench power and USB with **VBUS/5 V blocked,
+data and ground intact**. A data blocker or charging-only cable is unsuitable.
+Ordinary powered USB requires disconnecting **all five lamp wires** from the
+C3 first; turning off the lamp supply alone does not isolate the rail and signals.
+Nominal 13 V connects only to the stock lamp input, never a C3 pad.
+
+Keep power off and USB unplugged for rework or panel reconnection. Michael
+cannot reconnect the panels until reassembly. Accept his completed continuity
+and short checks. The corrected U4 map is in [hardware.md](hardware.md): top-row
+OE is fifth from left, SCL rightmost, SDA second from right. ESP assignments
+remain GPIO4/SDA, GPIO5/SCL and GPIO6/OE.
+
+Run the software gates before flashing and record the commit and outcomes:
 
 ```sh
 sh scripts/check.sh
 sh scripts/check-firmware.sh
 ```
 
-The software gates need no connected board. They do not replace the power and
-wiring checks below.
+These need no board or credentials. They cannot prove physical light or radio
+behavior. No simulated-image reflash is required for live checks.
 
-## 2. First power and read-only identification
+## 2. Identify, preflight and flash
 
-Energize the stock lamp input from the bench PSU with the LEDs still
-disconnected. Record input current, the C3 supply at `3.3`/`G`, and whether the
-PSU is current-limiting. The reported rail baseline is 3.37 V. Stop to investigate
-an unstable rail, current-limit cycling, unexpected heating, or repeated resets;
-do not treat an idle voltage as proof of stability under radio load.
-
-Connect the VBUS-blocked USB data/ground path. List ports before any flash write:
+Connect the VBUS-blocked USB cable under the power arrangement above, then list
+ports. Replace `PORT` in subsequent commands with the C3 serial path and close
+other serial monitors:
 
 ```sh
 python3 scripts/device.py --list
-```
-
-If the ESP is absent, start the read-only macOS watcher before trying reconnects
-or BOOT/RESET:
-
-```sh
-python3 scripts/usb-watch.py
-```
-
-It shows concise USB-C/accessory and USB device changes even when no serial port
-exists, saving detailed inventories and macOS logs to files. Ctrl-C stops and
-leaves the capture in the printed `local/usb-watch-*` folder. Keep the same
-power/VBUS isolation arrangement. See
-[watcher details](development.md#usb-detection-watcher-macos) for capture contents
-and limits. Continue with chip identification only after a serial port appears.
-
-Replace `PORT` in subsequent commands with the returned C3 serial device, such
-as `/dev/cu.usbmodem...`. Close other serial monitors. Inspect the connected chip:
-
-```sh
 sh scripts/flash.sh --info PORT
-```
-
-This invokes the chip-information query without building or writing flash;
-entering the ROM loader can reset the MCU. Record chip identity, revision, flash
-ID/capacity, and the serial port. Require **ESP32-C3** and **at least 4 MiB flash**
-for this layout. Do not continue on an identity mismatch, unknown capacity, or a
-smaller device.
-
-If automatic ROM entry fails, hold BOOT, press and release RESET, then release
-BOOT. Re-list ports if USB re-enumerates and retry the read-only identity query.
-This sequence exposed USB successfully on the first board. Keep the same
-lamp-power and VBUS-blocked USB arrangement throughout.
-
-## 3. Preflight and flash
-
-Build and check the image against the partition layout without writing to the
-board:
-
-```sh
 sh scripts/flash.sh --check
 ```
 
-Record the reported target, image size, and partition fit alongside the detected
-flash capacity from the preceding device query.
-The application layout requires 4 MiB, with NVS at `0x9000..0x19000` and one
-factory application at `0x20000..0x400000`. A rejected check is not permission
-to force a chip or flash-size override.
+The identity query does not write flash, but entering the ROM loader may reset
+the MCU. Require **ESP32-C3** and **at least 4 MiB detected flash** on each board.
+The layout uses NVS at `0x9000..0x19000` and one factory application at
+`0x20000..0x400000`. The offline image check validates the target, partition fit
+and minimum 16 KiB linked stack. Do not force an unknown identity or capacity.
 
-After the offline check succeeds, flash the real hardware image. The default
-command repeats device identity/capacity checks before its write operation:
+Flash the real image after preflight passes:
 
 ```sh
 sh scripts/flash.sh PORT
 ```
 
-Normal flashing preserves NVS and commissioning; do not add a full-chip erase.
-The separate `bench-light` image simulates the PCA and cannot validate these
-wires. The `--bench` helper option explicitly selects that simulation; omit it
-for this physical sequence. Record the flashed commit and outcome, then confirm
-the application restarts and exposes its native USB console.
+Normal flashing preserves NVS. Keep both existing first-board Home fabrics and
+do not copy populated NVS to the second board. Omit `--bench`, which selects
+simulated output. Record image version/commit and the flash outcome.
 
-## 4. Inspect the real PCA with LEDs disconnected
+If no serial port appears, `python3 scripts/usb-watch.py` records USB detection
+without resetting or writing the board. If automatic ROM entry fails, hold
+BOOT, press and release RESET, then release BOOT and re-list ports. Keep the
+same power isolation. See [USB watcher details](development.md#usb-detection-watcher-macos).
 
-Begin with status and explicit Off, then read and verify the controller:
+## 3. Verify restoration before changing output
 
 ```sh
 python3 scripts/device.py --port PORT status
-python3 scripts/device.py --port PORT off
-python3 scripts/device.py --port PORT registers
 python3 scripts/device.py --port PORT verify
+python3 scripts/device.py --port PORT registers
 ```
 
-`off` configures/writes the PCA; it is not a read-only query. Expect `KR OK` for
-successful commands. Record `KR ERR`, reset reasons, output/storage faults, or
-timeouts. A timeout can follow a command that executed, so inspect `status`
-before repeating a control command.
+Expect hardware mode, the flashed firmware version, no output/storage fault,
+and agreement between the saved target and the settled acknowledged frame.
+Read status before an Off/On command so restoration remains observable. Valid
+saved power, level and temperature restore by default. Missing intent starts
+Off at level 57 and 303 mired. Explicit startup Off remains supported; old
+startup On/Toggle policies normalize to Restore. This does not force every
+restart Off.
 
-Check the following separately and record the method as well as the result:
+The PCA address is `0x15`. Settled stock configuration is `MODE1 & 0x1f = 0`,
+`MODE2 = 0x14`, GRPPWM `0xff`, GRPFREQ zero and LEDOUT0–3 `0xaa`. Off has all
+16 PWM bytes zero. At level 57, warm/cool PWM is `6/2` at 303 mired and `3/6`
+at 200 mired. These are register expectations, not light measurements.
 
-| Check | Expected command or electrical state |
-| --- | --- |
-| PCA communication | Seven-bit address `0x15`, finite transactions at 100 kHz |
-| Critical register readback after Off | `MODE1 & 0x1f = 0`, `MODE2 = 0x14`, PWM0–15 zero, GRPPWM `0xff`, GRPFREQ zero, LEDOUT0–3 `0xaa` |
-| Supply | Record actual C3/PCA rail voltage and PSU current at idle and during radio activity |
-| SDA/SCL | Existing pull-ups remain; compare idle levels with the reported 3.37 V baseline |
-| OE | GPIO6 open-drain; released HIGH for Off and pulled LOW only after a verified On frame |
-| Firmware health | Record reset reason, uptime, brownout/reset loops, output faults, and storage faults |
+Healthy Matter attributes report the final durable target while a fade runs;
+USB status retains the intermediate acknowledged frame separately. Known I/O
+faults remain errors. WithOnOff at minimum level 1 turns Off. An ordinary level
+command preserves an Off target even during an Off fade.
 
-Use the confirmed harness colours during probing: black GND, red power, yellow
-SDA, green SCL, blue OE. Measure OE with meter COM on black/GND and the voltage
-probe on blue/OE. Expect near the rail while Off and near 0 V while On; record
-actual readings separately from firmware acknowledgements.
+Record errors, resets or unexpected state. A console timeout can follow a
+command that executed, so read status before repeating it. A new PCA or power
+fault is grounds for targeted diagnosis, not a reason to restart the completed
+probing checklist. If measurement is needed, use the confirmed harness colours:
+black GND, red power, yellow SDA, green SCL and blue OE. Resistance/continuity
+checks require power removed.
 
-With the panels still disconnected, exercise real register changes and return
-to Off:
+## 4. Apple Home
 
-```sh
-python3 scripts/device.py --port PORT level 57
-python3 scripts/device.py --port PORT temperature 303
-python3 scripts/device.py --port PORT on
-python3 scripts/device.py --port PORT verify
-python3 scripts/device.py --port PORT registers
-python3 scripts/device.py --port PORT temperature 200
-python3 scripts/device.py --port PORT verify
-python3 scripts/device.py --port PORT registers
-python3 scripts/device.py --port PORT off
-```
-
-At level `57`, the expected warm/cool PWM bytes are `6/2` for 303 mired and
-`3/6` for 200 mired. Level and temperature commands retain the current power
-state; `on` enables the configured output. Confirm the real image reports
-hardware mode. Simulation mode and simulated register values cannot pass the
-PCA checks, even though they use the same console and Matter control paths.
-
-Do resistance or continuity checks only with power removed. Because the field
-guide's signal map was found wrong, check each complete corrected signal path;
-the earlier pad-continuity report cannot validate it. A meter reading alone does
-not establish I²C timing or the absence of short rail transients. No test in this
-disconnected-LED stage can prove emitted light, darkness, temperature, or safe startup.
-
-## 5. Pairing and the next physical checks
-
-Request the stable per-device code explicitly over USB when ready to pair:
+Keep the first board paired. Only an uncommissioned board needs its own pairing
+credential. Each uncommissioned boot opens a 15-minute window; an explicit USB
+command reopens it and returns the stable credential:
 
 ```sh
 python3 scripts/device.py --port PORT commissioning code
 ```
 
-Keep the code private and out of logs, screenshots, and committed records. Each
-uncommissioned boot opens a 15-minute pairing window; this explicit command can
-reopen it. To avoid typing, request `commissioning qr` instead and render its
-payload locally on macOS:
+Alternatively, render its QR locally on macOS and scan it from Home:
 
 ```sh
 python3 scripts/device.py --port PORT commissioning qr | swift scripts/pairing-qr.swift /tmp/key-right-pairing.png
 open /tmp/key-right-pairing.png
 ```
 
-Scan the PNG in Apple Home's Add Accessory flow. It contains the same setup
-secret; keep the file private and choose a new output path if one already exists.
-These USB commands reject a device that already has a fabric. A previously
-paired accessory may be selectable through Home's Add Accessory → More options.
-Discovery advertises `Key Right XXXX` using the last two MAC bytes. Record the
-actual Home picker label separately; advertising a name does not prove Apple's
-display behavior or eliminate the initial setup credential.
+Use a fresh private output path if the PNG already exists. Keep codes and QR
+images out of captures, screenshots and Git. Both USB commissioning commands
+reject an already commissioned board. Discovery advertises `Key Right XXXX`
+using the last two MAC bytes; Home controls its displayed picker label.
 
-Pair each lamp separately. Apple Home should show one light with
-power, brightness, and temperature controls; group the two accessories in Home
-to control them together. Grouping has no frame-perfect timing guarantee.
+Each lamp should have one tile with power, brightness and white temperature.
+Use Home for these checks while reading USB status/verification as needed.
+Home 100% means stock nominal 10%, not the lamp's original full output.
+At 100%, the warm and cool slider ends should select the corresponding bank;
+Home may stop slightly inside the advertised 143–344 mired limits. Check a
+middle and low brightness, then Off. Do not repeat the first board's unloaded
+connector measurements. Group the two separately commissioned lamps in Home
+when both are available; grouping does not guarantee simultaneous transitions.
 
-Michael cannot reconnect the panels until reassembly. Use the four two-pin LED
-connectors as accessible probe points during disconnected bench work, recording
-the connector, reference point, instrument, requested state, and measured value.
-Do not interpret an unloaded connector voltage as LED current or brightness;
-PWM timing needs an oscilloscope or logic measurement at an appropriate node.
+## 5. Recovery checks
 
-For a paired board, exercise the controls in Home while inspecting USB `status`,
-`registers`, and `verify`. Leave each setting still until intended and
-acknowledged states agree; separate console requests can straddle a transition.
-Do not replace the Home commands with USB commands for this acceptance check.
+On a commissioned board, these local commands exercise different recovery paths
+without unpairing or changing network settings:
 
-1. Select Home 100% and the warmest temperature. Expect level 254; near the warm
-   endpoint the warm/cool PWM bytes are `22/0`. Measure DC volts across the two
-   pins of each of `F-1`, `F-2`, `W-1`, and `W-2`.
-2. Keep 100% and select the coolest temperature. Near that endpoint expect
-   `0/22`; repeat the same connector measurements. Record the actual mired
-   value: Home's slider may stop slightly inside the advertised limits.
-3. At a fixed temperature, select 50% and then the lowest nonzero Home brightness.
-   Verify the decreasing PWM values against the reported level and temperature.
-   Home 100% is the nominal stock 10% ceiling; unloaded DC voltage need not
-   decrease with brightness.
-4. Turn Off in Home. Verify acknowledged Off and all PWM bytes zero, then confirm
-   the four connector voltages return near zero. The blue/OE to black/GND check
-   is separate from measuring across an LED connector.
+```sh
+python3 scripts/device.py --port PORT test wifi
+python3 scripts/device.py --port PORT test network
+python3 scripts/device.py --port PORT test watchdog
+```
 
-The PCA's individual dimming signal is nominally 97 kHz
-([NXP datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf), section
-7.3.3). These registers select individual PWM; they do not prove the downstream
-driver waveform. An unloaded output may charge near the supply even at low duty.
-Temperature extremes can help distinguish output banks, but voltage alone does
-not establish emitted warm/cool colour, LED current, or optical brightness.
+Run one at a time and verify recovery before the next. `test wifi` requests an
+actual station disconnect followed by normal reconnection. `test network`
+recreates the complete transport. Observe Wi-Fi/local-IPv6 readiness and restored
+Home control with the same intended power, brightness, temperature and fabrics.
+An absent Internet connection or an idle Home controller is not a failure.
 
-After the disconnected-LED checks support reassembly, request and verify Off,
-turn off and disconnect the bench supply, unplug USB, and reconnect the panels
-during assembly. Use the LED-connected rows in
-[the validation record](validation-record.md) to observe Off, brightness and
-temperature, the Home 100%/stock 10% ceiling, startup/reset behavior, and recovery.
-Keep first connected-output tests distinct from the preceding readback results.
-At initial level `57`, 303 mired uses raw warm/cool `6/2` and 200 mired uses
-`3/6`; these are register expectations, not measured optical values.
+`test watchdog` requires settled, verified output. It stalls the firmware task
+until the 15-second watchdog resets the MCU; the PCA retains its previous frame
+during the stall. Confirm the watchdog reset reason and saved-state restoration.
+This is not an Off command or proof of dark startup. Software tests cover boot
+storage retry and transmit-stall policy; these console checks do not inject every
+possible hardware/network fault or establish long-term reliability.
+
+## 6. Reassemble and observe the actual light
+
+Issue and verify Off before assembly, remove lamp/bench power and unplug USB,
+then reconnect the panels during reassembly. Completed probing supports this
+step. Record connected-output results separately from register and unloaded
+voltage results.
+
+Observe power, low/middle/high brightness, warm/cool response, transitions and
+Off through Home. Check cold power-up and reset for unexpected flashes, then
+verify saved-state restoration and operation without USB. OE release and zero
+PWM minimize output once the ESP starts; they cannot guarantee darkness before
+it boots. Loaded startup has not yet been observed.
+
+With the housing closed, verify Home control and local recovery using the
+installed antenna arrangement. For two grouped lamps, confirm the other remains
+controllable while one is offline. Record failures and skipped checks in the
+[validation record](validation-record.md); do not infer optical brightness,
+Kelvin, current, flicker or thermal measurements from the PCA registers.

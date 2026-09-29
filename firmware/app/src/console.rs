@@ -15,6 +15,7 @@ pub async fn run<K: KvBlobStoreAccess, H: Hardware>(
     pairing: &str,
     pairing_qr: &str,
     open_commissioning: impl Fn() -> Result<(), rs_matter_embassy::matter::error::Error>,
+    is_commissioned: impl Fn() -> bool,
 ) -> ! {
     let mut line = String::<256>::new();
     let mut overflow = false;
@@ -32,6 +33,29 @@ pub async fn run<K: KvBlobStoreAccess, H: Hardware>(
                 let mut reply = String::<1024>::new();
                 if overflow {
                     let _ = reply.push_str("KR ERR line_too_long");
+                } else if matches!(line.trim(), "test wifi" | "test network") {
+                    if !is_commissioned() {
+                        let _ = reply.push_str("KR ERR requires_commissioned_device");
+                    } else if line.trim() == "test wifi" {
+                        match crate::network::request_disconnect() {
+                            Ok(()) => {
+                                let _ = reply.push_str(
+                                    "KR OK wifi_disconnect_requested intent_preserved=true",
+                                );
+                            }
+                            Err(error) => {
+                                let _ = write!(reply, "KR ERR {:?}", error.code());
+                            }
+                        }
+                    } else {
+                        let _ =
+                            reply.push_str("KR OK network_restart_requested intent_preserved=true");
+                        crate::output::response_and_flush(reply).await;
+                        crate::network::RESTART.signal(());
+                        line.clear();
+                        overflow = false;
+                        continue;
+                    }
                 } else if line.trim() == "reboot" {
                     let off_verified = runtime.prepare_reboot();
                     let _ = write!(reply, "KR OK rebooting intent_preserved=true off_registers_verified={off_verified}");
@@ -165,7 +189,7 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             return;
         }
         _ => {
-            let _=out.push_str("KR ERR commands=status|off|on|level_1..254|temperature_143..344|on_1_or_2|verify|registers|commissioning_code|commissioning_qr|reboot|test_watchdog");
+            let _=out.push_str("KR ERR commands=status|off|on|level_1..254|temperature_143..344|on_1_or_2|verify|registers|commissioning_code|commissioning_qr|reboot|test_watchdog|test_wifi|test_network");
             return;
         }
     };

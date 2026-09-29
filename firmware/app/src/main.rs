@@ -13,6 +13,7 @@ use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 use esp_metadata_generated::memory_range;
 use tinyrlibc as _;
 
+mod boot;
 mod commissioning;
 mod commissioning_ble;
 mod console;
@@ -21,6 +22,7 @@ mod light;
 mod network;
 mod network_driver;
 mod network_scan;
+mod network_tx;
 mod output;
 mod presets;
 mod recovery;

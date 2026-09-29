@@ -14,8 +14,31 @@ use bt_hci::controller::ExternalController;
 use esp_radio::ble::controller::BleConnector;
 
 use crate::network::Controller;
+use crate::network_tx::GuardedDriver;
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
+use portable_atomic::{AtomicU64, Ordering};
 use rs_matter_embassy::matter::error::Error;
 const SLOTS: usize = 20;
+pub static TX_STALL: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+static TX_BLOCKED_SINCE: AtomicU64 = AtomicU64::new(u64::MAX);
+
+fn queue_health(blocked_since: Option<u64>) {
+    TX_BLOCKED_SINCE.store(blocked_since.unwrap_or(u64::MAX), Ordering::Relaxed);
+}
+
+pub fn reset_health() {
+    queue_health(None);
+}
+
+pub fn healthy_until(now: u64) -> u64 {
+    let since = TX_BLOCKED_SINCE.load(Ordering::Relaxed);
+    crate::network_tx::healthy_until(now, (since != u64::MAX).then_some(since))
+}
+
+fn queue_stalled() {
+    log::error!("Wi-Fi transmit queue unavailable for 60s while link is up");
+    TX_STALL.signal(());
+}
 use rs_matter_embassy::wireless::{
     BleDriver, BleDriverTask, WifiCoexDriver, WifiCoexDriverTask, WifiDriver, WifiDriverTask,
 };
@@ -125,7 +148,8 @@ impl WifiDriver for EspWifiDriver<'_> {
         diagnostic_scan(&mut controller).await?;
 
         task.run(
-            esp_radio::wifi::Interface::station(),
+            GuardedDriver::new(esp_radio::wifi::Interface::station(), queue_stalled)
+                .with_health_observer(queue_health),
             Controller::new(controller),
         )
         .await
@@ -154,7 +178,8 @@ impl WifiCoexDriver for EspWifiDriver<'_> {
         diagnostic_scan(&mut controller).await?;
 
         task.run(
-            esp_radio::wifi::Interface::station(),
+            GuardedDriver::new(esp_radio::wifi::Interface::station(), queue_stalled)
+                .with_health_observer(queue_health),
             Controller::new(controller),
             ble_ctl,
         )

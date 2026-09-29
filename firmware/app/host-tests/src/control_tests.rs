@@ -1,7 +1,7 @@
 use crate::presets::{LightHandler, COLOR_CLUSTER, LEVEL_CLUSTER, ON_OFF_CLUSTER};
 use crate::runtime::{Hardware, OffEffect, OutputError, Runtime};
 use key_right_core::{ColorTemperature, Level, LightOutput, LightState};
-use rs_matter::dm::clusters::app::{color_control as color, level_control as level};
+use rs_matter::dm::clusters::app::{color_control as color, level_control as level, on_off};
 use rs_matter::dm::clusters::decl::scenes_management::AttributeValuePairStruct;
 use rs_matter::dm::clusters::scenes::ScenesState;
 use rs_matter::dm::Dataver;
@@ -12,6 +12,158 @@ use rs_matter::utils::storage::WriteBuf;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::rc::Rc;
+
+// Attribute getters are synchronous futures. Exercise the production trait wiring
+// without constructing a transport or using a radio.
+fn ready<F: std::future::Future>(future: F) -> F::Output {
+    let mut future = std::pin::pin!(future);
+    match future
+        .as_mut()
+        .poll(&mut std::task::Context::from_waker(std::task::Waker::noop()))
+    {
+        std::task::Poll::Ready(value) => value,
+        std::task::Poll::Pending => panic!("attribute getter unexpectedly awaited I/O"),
+    }
+}
+fn unused<T>() -> T {
+    panic!("attribute getter unexpectedly used the transport context")
+}
+struct TestContext<'a> {
+    light: &'a LightHandler<'a, Access, Output>,
+    notifications: RefCell<Vec<(u32, Option<u32>)>>,
+}
+impl<'a> TestContext<'a> {
+    fn new(light: &'a LightHandler<'a, Access, Output>) -> Self {
+        Self {
+            light,
+            notifications: RefCell::new(Vec::new()),
+        }
+    }
+    fn notify(&self, cluster: u32, attribute: Option<u32>) {
+        // Match rs-matter 0.2.0's InteractionModel notification semantics.
+        match cluster {
+            6 => on_off::ClusterAsyncHandler::dataver_changed(self.light),
+            8 => level::ClusterAsyncHandler::dataver_changed(self.light),
+            0x300 => color::ClusterAsyncHandler::dataver_changed(self.light),
+            _ => (),
+        }
+        self.notifications.borrow_mut().push((cluster, attribute));
+    }
+}
+impl rs_matter::dm::AttrChangeNotifier for TestContext<'_> {
+    fn notify_attr_changed(&self, endpoint: u16, cluster: u32, attribute: u32) {
+        assert_eq!(endpoint, 1);
+        self.notify(cluster, Some(attribute));
+    }
+    fn notify_cluster_changed(&self, endpoint: u16, cluster: u32) {
+        assert_eq!(endpoint, 1);
+        self.notify(cluster, None);
+    }
+    fn notify_endpoint_changed(&self, _: u16) {
+        unused()
+    }
+    fn notify_all_changed(&self) {
+        unused()
+    }
+}
+impl rs_matter::dm::EventEmitter for TestContext<'_> {
+    fn emit_event<F>(
+        &self,
+        _: u16,
+        _: u32,
+        _: u32,
+        _: rs_matter::im::EventPriority,
+        _: F,
+    ) -> Result<rs_matter::dm::EventNumber, Error>
+    where
+        F: FnOnce(rs_matter::im::events::EventTLVWrite<'_>) -> Result<(), Error>,
+    {
+        unused()
+    }
+}
+impl rs_matter::dm::HandlerContext for TestContext<'_> {
+    fn matter(&self) -> &rs_matter::Matter<'_> {
+        unused()
+    }
+    fn crypto(&self) -> impl rs_matter::crypto::Crypto + '_ {
+        unused::<
+            rs_matter::crypto::backend::rustcrypto::RustCrypto<
+                '_,
+                rs_matter::crypto::WeakTestOnlyRand,
+            >,
+        >()
+    }
+    fn kv(&self) -> impl KvBlobStoreAccess + '_ {
+        unused::<Access>()
+    }
+    fn networks(&self) -> impl rs_matter::dm::clusters::net_comm::NetworksAccess + '_ {
+        rs_matter::dm::clusters::net_comm::DummyNetworkAccess
+    }
+    fn metadata(&self) -> impl rs_matter::dm::Metadata + '_ {
+        unused::<rs_matter::dm::Node<'_>>()
+    }
+    fn handler(&self) -> impl rs_matter::dm::AsyncHandler + '_ {
+        rs_matter::dm::EmptyHandler
+    }
+    fn buffers(
+        &self,
+    ) -> impl rs_matter::utils::storage::pooled::Buffers<rs_matter::im::IMBuffer> + '_ {
+        unused::<rs_matter::utils::storage::pooled::PooledBuffers<rs_matter::im::IMBuffer, 1>>()
+    }
+}
+impl rs_matter::dm::MatchContext for TestContext<'_> {
+    fn endpt(&self) -> Option<u16> {
+        Some(1)
+    }
+    fn cluster(&self) -> Option<u32> {
+        unused()
+    }
+}
+impl rs_matter::dm::OwnAttrChangeNotifier for TestContext<'_> {
+    fn notify_own_attr_changed(&self, _: u32) {
+        unused()
+    }
+    fn notify_own_cluster_changed(&self) {
+        unused()
+    }
+    fn notify_own_endpoint_changed(&self) {
+        unused()
+    }
+}
+impl rs_matter::dm::OwnEventEmitter for TestContext<'_> {
+    fn emit_own_event<F>(
+        &self,
+        _: u32,
+        _: rs_matter::im::EventPriority,
+        _: F,
+    ) -> Result<rs_matter::dm::EventNumber, Error>
+    where
+        F: FnOnce(rs_matter::im::events::EventTLVWrite<'_>) -> Result<(), Error>,
+    {
+        unused()
+    }
+}
+impl rs_matter::dm::OperationContext for TestContext<'_> {
+    fn exchange(&self) -> &rs_matter::transport::exchange::Exchange<'_> {
+        unused()
+    }
+}
+impl rs_matter::dm::ReadContext for TestContext<'_> {
+    fn attr(&self) -> &rs_matter::dm::AttrDetails {
+        unused()
+    }
+}
+impl rs_matter::dm::WriteContext for TestContext<'_> {
+    fn attr(&self) -> &rs_matter::dm::AttrDetails {
+        unused()
+    }
+    fn data(&self) -> &TLVElement<'_> {
+        unused()
+    }
+    fn notify_changed(&self) {
+        self.notify(6, Some(on_off::AttributeId::StartUpOnOff as u32));
+    }
+}
 
 #[derive(Default)]
 struct Rig {
@@ -167,7 +319,7 @@ fn with_on_off_move_reaches_off_and_step_cancels_an_earlier_move() {
     runtime.tick(500);
     assert!(runtime.acknowledged().unwrap().on);
     light
-        .level_step(level::StepModeEnum::Up, 10, Some(0), false, lo(), lo())
+        .level_step(level::StepModeEnum::Up, 10, Some(0), true, lo(), lo())
         .unwrap();
     let stopped = runtime.acknowledged().unwrap().level;
     runtime.tick(3000);
@@ -389,4 +541,259 @@ fn failed_scene_actuation_returns_error_with_complete_target_for_recovery() {
     h.fail_output.set(false);
     runtime.tick(5000);
     assert_eq!(runtime.acknowledged().unwrap(), target);
+}
+
+#[test]
+fn matter_attributes_report_targets_through_fades_and_fail_when_output_is_unknown() {
+    let (h, runtime) = rig();
+    let scenes = ScenesState::new();
+    let light = handler(&runtime, &scenes);
+    let ctx = TestContext::new(&light);
+    light.level_to(200, true, Some(20), lo(), lo()).unwrap();
+    light.color_to(200, 20, co(), co()).unwrap();
+    runtime.tick(500);
+    assert!(ready(on_off::ClusterAsyncHandler::on_off(&light, &ctx)).unwrap());
+    assert_eq!(
+        ready(level::ClusterAsyncHandler::current_level(&light, &ctx))
+            .unwrap()
+            .into_option(),
+        Some(200)
+    );
+    assert_eq!(
+        ready(color::ClusterAsyncHandler::color_temperature_mireds(
+            &light, &ctx
+        ))
+        .unwrap(),
+        200
+    );
+    assert_ne!(runtime.acknowledged().unwrap(), runtime.reported().unwrap());
+    light.off_with_effect(OffEffect::FastFade).unwrap();
+    assert!(!ready(on_off::ClusterAsyncHandler::on_off(&light, &ctx)).unwrap());
+    assert!(runtime.acknowledged().unwrap().on);
+    assert_eq!(
+        ready(level::ClusterAsyncHandler::current_level(&light, &ctx))
+            .unwrap()
+            .into_option(),
+        Some(200)
+    );
+    runtime.tick(1300);
+    light.recall_global_scene().unwrap();
+    assert_eq!(runtime.acknowledged().unwrap().level.get(), 200);
+    assert_eq!(runtime.acknowledged().unwrap().temperature.get(), 200);
+    h.fail_output.set(true);
+    assert!(light.power(false).is_err());
+    assert!(ready(on_off::ClusterAsyncHandler::on_off(&light, &ctx)).is_err());
+    assert!(ready(level::ClusterAsyncHandler::current_level(&light, &ctx)).is_err());
+    assert!(ready(color::ClusterAsyncHandler::color_temperature_mireds(
+        &light, &ctx
+    ))
+    .is_err());
+}
+
+#[test]
+fn minimum_with_on_off_is_off_but_plain_level_and_on_can_use_minimum() {
+    let (_, runtime) = rig();
+    let scenes = ScenesState::new();
+    let light = handler(&runtime, &scenes);
+    for raw in [0, 1] {
+        light.level_to(100, true, None, lo(), lo()).unwrap();
+        light.level_to(raw, true, None, lo(), lo()).unwrap();
+        assert!(!runtime.reported().unwrap().on);
+        assert_eq!(runtime.reported().unwrap().level, Level::MIN);
+    }
+    light.power(true).unwrap();
+    light.level_to(1, false, None, lo(), lo()).unwrap();
+    assert!(runtime.reported().unwrap().on);
+    light.level_to(2, true, None, lo(), lo()).unwrap();
+    light
+        .level_step(level::StepModeEnum::Down, 1, None, true, lo(), lo())
+        .unwrap();
+    assert!(!runtime.reported().unwrap().on);
+}
+
+#[test]
+fn ordinary_level_commands_never_resurrect_an_off_fade() {
+    let (_, runtime) = rig();
+    let scenes = ScenesState::new();
+    let light = handler(&runtime, &scenes);
+    light.level_to(100, true, None, lo(), lo()).unwrap();
+    light.off_with_effect(OffEffect::SlowFade).unwrap();
+    runtime.tick(400);
+    assert!(runtime.acknowledged().unwrap().on);
+    light.level_to(180, false, None, lo(), lo()).unwrap();
+    assert!(!runtime.reported().unwrap().on);
+    assert_eq!(runtime.reported().unwrap().level.get(), 100);
+    let execute = level::OptionsBitmap::EXECUTE_IF_OFF;
+    light.level_to(180, false, None, execute, execute).unwrap();
+    assert!(!runtime.reported().unwrap().on);
+    assert_eq!(runtime.reported().unwrap().level.get(), 180);
+    runtime.tick(20000);
+    assert!(!runtime.acknowledged().unwrap().on);
+}
+
+#[test]
+fn both_stop_variants_freeze_an_off_fade_at_the_acknowledged_frame() {
+    for with_on_off in [false, true] {
+        let (_, runtime) = rig();
+        let scenes = ScenesState::new();
+        let light = handler(&runtime, &scenes);
+        light.level_to(100, true, None, lo(), lo()).unwrap();
+        light.level_to(0, true, Some(20), lo(), lo()).unwrap();
+        runtime.tick(500);
+        let frame = runtime.acknowledged().unwrap();
+        assert!(!runtime.reported().unwrap().on);
+        light.stop_level(with_on_off, lo(), lo()).unwrap();
+        assert_eq!(runtime.reported().unwrap(), frame);
+        runtime.tick(3000);
+        assert_eq!(runtime.acknowledged().unwrap(), frame);
+    }
+}
+
+#[test]
+fn fades_notify_only_remaining_time_then_targets_and_faults_notify_clusters() {
+    let (h, runtime) = rig();
+    let scenes = ScenesState::new();
+    let light = handler(&runtime, &scenes);
+    let ctx = TestContext::new(&light);
+    let clusters = [6, 8, 0x300];
+    let mut reports = core::array::from_fn::<_, 3, _>(|index| light.report_state(index));
+    light.level_to(200, true, Some(20), lo(), lo()).unwrap();
+    light.color_to(200, 20, co(), co()).unwrap();
+    for (index, report) in reports.iter_mut().enumerate() {
+        light.poll_report(&ctx, index, clusters[index], report);
+    }
+    for cluster in clusters {
+        assert!(ctx.notifications.borrow().contains(&(cluster, None)));
+    }
+    ctx.notifications.borrow_mut().clear();
+    let level_version = level::ClusterAsyncHandler::dataver(&light);
+    runtime.tick(500);
+    for (index, report) in reports.iter_mut().enumerate() {
+        light.poll_report(&ctx, index, clusters[index], report);
+    }
+    assert_eq!(
+        *ctx.notifications.borrow(),
+        vec![(8, Some(1)), (0x300, Some(2))]
+    );
+    assert_ne!(level::ClusterAsyncHandler::dataver(&light), level_version);
+    ctx.notifications.borrow_mut().clear();
+    for (index, report) in reports.iter_mut().enumerate() {
+        light.poll_report(&ctx, index, clusters[index], report);
+    }
+    assert!(ctx.notifications.borrow().is_empty());
+    runtime.tick(2000);
+    for (index, report) in reports.iter_mut().enumerate() {
+        light.poll_report(&ctx, index, clusters[index], report);
+    }
+    assert_eq!(
+        *ctx.notifications.borrow(),
+        vec![(8, Some(1)), (0x300, Some(2))]
+    );
+    ctx.notifications.borrow_mut().clear();
+    runtime.off().unwrap();
+    for (index, report) in reports.iter_mut().enumerate() {
+        light.poll_report(&ctx, index, clusters[index], report);
+    }
+    for cluster in clusters {
+        assert!(ctx.notifications.borrow().contains(&(cluster, None)));
+    }
+    ctx.notifications.borrow_mut().clear();
+    h.fail_output.set(true);
+    assert!(runtime.verify().is_err());
+    for (index, report) in reports.iter_mut().enumerate() {
+        light.poll_report(&ctx, index, clusters[index], report);
+    }
+    for cluster in clusters {
+        assert!(ctx.notifications.borrow().contains(&(cluster, None)));
+    }
+    h.fail_output.set(false);
+    runtime.tick(7000);
+    ctx.notifications.borrow_mut().clear();
+    for (index, report) in reports.iter_mut().enumerate() {
+        light.poll_report(&ctx, index, clusters[index], report);
+    }
+    for cluster in clusters {
+        assert!(ctx.notifications.borrow().contains(&(cluster, None)));
+    }
+}
+
+#[test]
+fn remaining_time_reports_completion_even_when_a_transition_has_no_distance() {
+    let (_, runtime) = rig();
+    let scenes = ScenesState::new();
+    let light = handler(&runtime, &scenes);
+    let ctx = TestContext::new(&light);
+    light.level_to(100, true, None, lo(), lo()).unwrap();
+    light.level_to(100, false, Some(100), lo(), lo()).unwrap();
+    let mut report = light.report_state(1);
+    assert_eq!(
+        ready(level::ClusterAsyncHandler::remaining_time(&light, &ctx)).unwrap(),
+        100
+    );
+    runtime.tick(10000);
+    light.poll_report(&ctx, 1, 8, &mut report);
+    assert_eq!(*ctx.notifications.borrow(), vec![(8, Some(1))]);
+    assert_eq!(
+        ready(level::ClusterAsyncHandler::remaining_time(&light, &ctx)).unwrap(),
+        0
+    );
+}
+
+#[test]
+fn startup_power_attribute_accepts_restore_or_off_and_rejects_on_or_toggle() {
+    use on_off::StartUpOnOffEnum as Startup;
+    use rs_matter::tlv::Nullable;
+    let (h, runtime) = rig();
+    let scenes = ScenesState::new();
+    let light = handler(&runtime, &scenes);
+    let ctx = TestContext::new(&light);
+    assert_eq!(
+        ready(on_off::ClusterAsyncHandler::start_up_on_off(&light, &ctx))
+            .unwrap()
+            .into_option(),
+        None
+    );
+    light.power(true).unwrap();
+    let writes = h.writes.get();
+    for unsupported in [Startup::On, Startup::Toggle] {
+        let error = ready(on_off::ClusterAsyncHandler::set_start_up_on_off(
+            &light,
+            &ctx,
+            Nullable::some(unsupported),
+        ))
+        .unwrap_err();
+        assert_eq!(error.code(), ErrorCode::ConstraintError);
+        assert_eq!(h.writes.get(), writes);
+        assert!(ctx.notifications.borrow().is_empty());
+    }
+    ready(on_off::ClusterAsyncHandler::set_start_up_on_off(
+        &light,
+        &ctx,
+        Nullable::some(Startup::Off),
+    ))
+    .unwrap();
+    assert_eq!(
+        ready(on_off::ClusterAsyncHandler::start_up_on_off(&light, &ctx))
+            .unwrap()
+            .into_option(),
+        Some(Startup::Off)
+    );
+    assert!(runtime.reported().unwrap().on);
+    ready(on_off::ClusterAsyncHandler::set_start_up_on_off(
+        &light,
+        &ctx,
+        Nullable::none(),
+    ))
+    .unwrap();
+    assert_eq!(
+        ready(on_off::ClusterAsyncHandler::start_up_on_off(&light, &ctx))
+            .unwrap()
+            .into_option(),
+        None
+    );
+    assert!(runtime.reported().unwrap().on);
+    assert_eq!(
+        *ctx.notifications.borrow(),
+        vec![(6, Some(0x4003)), (6, Some(0x4003))]
+    );
 }

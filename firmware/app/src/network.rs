@@ -1,8 +1,10 @@
 //! Adapted from pinned rs-matter-embassy wifi/esp.rs, adding operation deadlines.
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{with_timeout, Duration};
-use portable_atomic::{AtomicI32, AtomicU32, Ordering};
+use portable_atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
 pub static RESTART: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+static DISCONNECT: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+static DISCONNECT_PENDING: AtomicBool = AtomicBool::new(false);
 static TIMEOUTS: AtomicU32 = AtomicU32::new(0);
 static ATTEMPTS: AtomicU32 = AtomicU32::new(0);
 static CONNECTED: AtomicU32 = AtomicU32::new(0);
@@ -11,6 +13,43 @@ static RSSI: AtomicI32 = AtomicI32::new(i32::MIN);
 static LOCAL_READY: AtomicU32 = AtomicU32::new(0);
 static IPV4_READY: AtomicU32 = AtomicU32::new(0);
 static IP_TIMEOUTS: AtomicU32 = AtomicU32::new(0);
+static HEALTHY_SINCE: AtomicU64 = AtomicU64::new(u64::MAX);
+static LONGEST_HEALTHY_MS: AtomicU64 = AtomicU64::new(0);
+/// Queue a real link interruption for the local diagnostic. The normal Matter
+/// network manager reconnects using the existing saved credentials.
+pub fn request_disconnect() -> Result<(), Error> {
+    if CONNECTED.load(Ordering::Relaxed) == 0 {
+        return Err(ErrorCode::InvalidState.into());
+    }
+    DISCONNECT_PENDING
+        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+        .map_err(|_| Error::from(ErrorCode::Busy))?;
+    DISCONNECT.signal(());
+    Ok(())
+}
+/// Longest continuous healthy interval in this transport run, including a
+/// completed interval before its failure. Call before `restarted()` clears it.
+pub fn healthy_for_ms(now_ms: u64) -> u64 {
+    let now_ms = crate::network_driver::healthy_until(now_ms);
+    let since = HEALTHY_SINCE.load(Ordering::Relaxed);
+    let current = if since == u64::MAX
+        || CONNECTED.load(Ordering::Relaxed) == 0
+        || LOCAL_READY.load(Ordering::Relaxed) == 0
+        || RSSI.load(Ordering::Relaxed) == i32::MIN
+    {
+        0
+    } else {
+        now_ms.saturating_sub(since)
+    };
+    current.max(LONGEST_HEALTHY_MS.load(Ordering::Relaxed))
+}
+fn end_healthy_period(now_ms: u64) {
+    let now_ms = crate::network_driver::healthy_until(now_ms);
+    let since = HEALTHY_SINCE.swap(u64::MAX, Ordering::Relaxed);
+    if since != u64::MAX {
+        LONGEST_HEALTHY_MS.fetch_max(now_ms.saturating_sub(since), Ordering::Relaxed);
+    }
+}
 pub fn local_metrics() -> (Option<i32>, bool, bool, u32) {
     let rssi = RSSI.load(Ordering::Relaxed);
     (
@@ -29,11 +68,16 @@ pub fn metrics() -> (u32, u32, u32, bool) {
     )
 }
 pub fn restarted() {
+    crate::network_driver::reset_health();
     RESTARTS.fetch_add(1, Ordering::Relaxed);
     CONNECTED.store(0, Ordering::Relaxed);
     RSSI.store(i32::MIN, Ordering::Relaxed);
     LOCAL_READY.store(0, Ordering::Relaxed);
     IPV4_READY.store(0, Ordering::Relaxed);
+    HEALTHY_SINCE.store(u64::MAX, Ordering::Relaxed);
+    LONGEST_HEALTHY_MS.store(0, Ordering::Relaxed);
+    DISCONNECT_PENDING.store(false, Ordering::Relaxed);
+    DISCONNECT.reset();
 }
 async fn deadline<T>(
     seconds: u64,
@@ -67,7 +111,12 @@ use rs_matter_embassy::matter::tlv::Nullable;
 use rs_matter_embassy::matter::utils::sync::blocking::Mutex;
 use rs_matter_embassy::matter::utils::sync::{DynBase, IfMutex};
 
-pub struct Controller<'a>(IfMutex<WifiController<'a>>, Mutex<Cell<bool>>);
+pub struct Controller<'a>(
+    IfMutex<WifiController<'a>>,
+    Mutex<Cell<bool>>,
+    Mutex<Cell<crate::recovery::DriverErrors>>,
+    Mutex<Cell<crate::recovery::AssociatedHealth>>,
+);
 
 // The SDK's 10–20 ms active dwell missed the installed AP during C3 bench
 // commissioning. Keep discovery long enough to receive delayed probe replies.
@@ -83,12 +132,67 @@ fn discovery_scan() -> ScanConfig {
 }
 
 impl<'a> Controller<'a> {
-    pub const fn new(controller: WifiController<'a>) -> Self {
-        Self(IfMutex::new(controller), Mutex::new(Cell::new(false)))
+    pub fn new(controller: WifiController<'a>) -> Self {
+        Self(
+            IfMutex::new(controller),
+            Mutex::new(Cell::new(false)),
+            Mutex::new(Cell::new(crate::recovery::DriverErrors::default())),
+            Mutex::new(Cell::new(crate::recovery::AssociatedHealth::default())),
+        )
     }
 }
 
 impl Controller<'_> {
+    fn update_connected(&self, new_connected: bool, rssi: Option<i32>) -> bool {
+        CONNECTED.store(u32::from(new_connected), Ordering::Relaxed);
+        RSSI.store(rssi.unwrap_or(i32::MIN), Ordering::Relaxed);
+        if !new_connected {
+            LOCAL_READY.store(0, Ordering::Relaxed);
+            IPV4_READY.store(0, Ordering::Relaxed);
+            self.3.lock(|health| health.set(Default::default()));
+        }
+        if !new_connected || rssi.is_none() {
+            end_healthy_period(embassy_time::Instant::now().as_millis());
+        }
+        self.1.lock(|connected| {
+            let changed = connected.get() != new_connected;
+            if changed {
+                log::info!("Wifi state changed: {} -> {new_connected}", connected.get());
+            }
+            connected.set(new_connected);
+            changed
+        })
+    }
+
+    fn record_connection_result(&self, result: &Result<(), NetCtlError>) {
+        if result.is_err() {
+            self.update_connected(false, None);
+        }
+        let internal_failure = matches!(
+            result,
+            Err(NetCtlError::Other(error)) if error.code() == ErrorCode::NoNetworkInterface
+        );
+        let restart = self.2.lock(|errors| {
+            let mut current = errors.get();
+            let restart = current.observe(internal_failure);
+            errors.set(current);
+            restart
+        });
+        if restart {
+            log::error!("Repeated internal Wifi errors; recreating the transport");
+            RESTART.signal(());
+        }
+    }
+
+    async fn disconnect_inner(&self) -> Result<(), NetCtlError> {
+        let mut ctl = self.0.lock().await;
+        self.update_connected(false, None);
+        if ctl.is_connected() {
+            ctl.disconnect_async().await.map_err(to_ctl_err)?;
+        }
+        Ok(())
+    }
+
     async fn scan_inner<F>(&self, network: Option<&[u8]>, mut f: F) -> Result<(), NetCtlError>
     where
         F: FnMut(&NetworkScanInfo) -> Result<(), Error>,
@@ -164,14 +268,11 @@ impl Controller<'_> {
         let pass = core::str::from_utf8(pass).unwrap_or("???");
 
         ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+        self.update_connected(false, None);
 
         if ctl.is_connected() {
             log::info!("Wifi already connected, disconnecting first");
             let _ = ctl.disconnect_async().await;
-
-            self.1.lock(|connected| {
-                connected.set(false);
-            });
         }
 
         // Find the requested network before the driver's association scan. A
@@ -211,11 +312,7 @@ impl Controller<'_> {
 
         ctl.connect_async().await.map_err(to_ctl_err)?;
 
-        self.1.lock(|connected| {
-            log::info!("Wifi state updated: {} -> {}", connected.get(), true);
-            CONNECTED.store(1, Ordering::Relaxed);
-            connected.set(true);
-        });
+        self.update_connected(ctl.is_connected(), ctl.rssi().ok());
 
         log::info!("Wifi connected");
 
@@ -229,37 +326,43 @@ impl NetChangeNotif for Controller<'_> {
             let ctl = self.0.lock().await;
 
             let new_connected = ctl.is_connected();
-            RSSI.store(
-                if new_connected {
-                    ctl.rssi().unwrap_or(i32::MIN)
-                } else {
-                    i32::MIN
-                },
-                Ordering::Relaxed,
-            );
-            self.1.lock(|connected| {
-                if connected.get() != new_connected {
-                    log::warn!(
-                        "Wifi state changed: {} -> {}",
-                        connected.get(),
-                        new_connected
-                    );
-
-                    CONNECTED.store(u32::from(new_connected), Ordering::Relaxed);
-                    connected.set(new_connected);
-                    true
-                } else {
-                    false
-                }
-            })
+            let rssi = new_connected.then(|| ctl.rssi().ok()).flatten();
+            let changed = self.update_connected(new_connected, rssi);
+            let restart = self.3.lock(|health| {
+                let mut current = health.get();
+                let restart = current.restart_due(
+                    embassy_time::Instant::now().as_millis(),
+                    new_connected,
+                    rssi.is_some(),
+                );
+                health.set(current);
+                restart
+            });
+            if restart {
+                log::error!("Wifi association stayed stale for 60s; recreating the transport");
+                RESTART.signal(());
+            }
+            changed
         };
 
         loop {
+            if DISCONNECT_PENDING.load(Ordering::Relaxed) {
+                let result = deadline(30, self.disconnect_inner()).await;
+                self.record_connection_result(&result);
+                DISCONNECT_PENDING.store(false, Ordering::Relaxed);
+                DISCONNECT.reset();
+                log::warn!("Local Wifi interruption completed: {result:?}");
+                return;
+            }
             if fetch_connected().await {
                 return;
             }
 
-            embassy_time::Timer::after(embassy_time::Duration::from_secs(2)).await;
+            embassy_futures::select::select(
+                embassy_time::Timer::after(Duration::from_secs(2)),
+                DISCONNECT.wait(),
+            )
+            .await;
         }
     }
 }
@@ -304,7 +407,7 @@ fn to_ctl_err(e: WifiError) -> NetCtlError {
     log::error!("Wifi error: {:?}", e);
 
     match e {
-        WifiError::NotConnected => NetCtlError::OtherConnectionFailure,
+        WifiError::NotConnected | WifiError::Disconnected(_) => NetCtlError::OtherConnectionFailure,
         WifiError::Unsupported => NetCtlError::UnsupportedSecurity,
         _ => NetCtlError::Other(ErrorCode::NoNetworkInterface.into()),
     }
@@ -323,10 +426,16 @@ impl NetCtl for Controller<'_> {
     where
         F: FnMut(&NetworkScanInfo) -> Result<(), Error>,
     {
-        deadline(30, self.scan_inner(network, f)).await
+        let result = deadline(30, self.scan_inner(network, f)).await;
+        if result.is_err() {
+            self.update_connected(false, None);
+        }
+        result
     }
     async fn connect(&self, creds: &WirelessCreds<'_>) -> Result<(), NetCtlError> {
-        deadline(30, self.connect_inner(creds)).await
+        let result = deadline(30, self.connect_inner(creds)).await;
+        self.record_connection_result(&result);
+        result
     }
 }
 
@@ -345,17 +454,24 @@ impl rs_matter_embassy::stack::UserTask for InterfaceMonitor {
             let mut v4 = false;
             netif.netifs(&mut |info| {
                 v4 |= info.operational && !info.ipv4_addrs.is_empty();
-                ready |= info.operational
-                    && (!info.ipv4_addrs.is_empty() || !info.ipv6_addrs.is_empty());
+                ready |= crate::recovery::usable_local_ipv6(info.operational, info.ipv6_addrs);
                 Ok(())
             })?;
             LOCAL_READY.store(u32::from(ready), Ordering::Relaxed);
             IPV4_READY.store(u32::from(v4), Ordering::Relaxed);
-            if health.restart_due(
-                embassy_time::Instant::now().as_millis(),
-                CONNECTED.load(Ordering::Relaxed) != 0,
-                ready,
-            ) {
+            let now = embassy_time::Instant::now().as_millis();
+            let associated = CONNECTED.load(Ordering::Relaxed) != 0;
+            if associated && ready && RSSI.load(Ordering::Relaxed) != i32::MIN {
+                let _ = HEALTHY_SINCE.compare_exchange(
+                    u64::MAX,
+                    now,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                );
+            } else {
+                end_healthy_period(now);
+            }
+            if health.restart_due(now, associated, ready) {
                 IP_TIMEOUTS.fetch_add(1, Ordering::Relaxed);
                 return Err(ErrorCode::NoNetworkInterface.into());
             }

@@ -23,10 +23,14 @@ Use wire colour plus signal in probing instructions.
 On 2026-09-28 Michael corrected the field guide's U4 pad map: top-row OE is
 pad 5 counting from 1 at the left, SCL is rightmost, and SDA is second from
 right. The ESP end is correct and remains GPIO4/5/6 for SDA/SCL/OE. Keep power
-off for rework and confirm end-to-end continuity before powered tests.
+off for rework.
 `docs/hardware.md` owns the physical map; `docs/validation-record.md` owns
 per-board rework and testing status. Accept Michael's reported continuity and
 short checks; do not request them again without contradictory evidence.
+Michael considers the first board's bench probing complete. Proceed with
+firmware verification, unpowered reassembly, and loaded operation. The second
+board proceeds through chip/capacity preflight, flashing, and live tests without
+another routine meter-probing sequence; investigate wiring only if a fault appears.
 OE must be open-drain:
 set/release HIGH before enabling output mode, then drive LOW to enable the PCA.
 Preserve native USB on GPIO18/19; do not invent an antenna-selection GPIO.
@@ -35,8 +39,10 @@ LED0/warm and LED4/cool. `docs/hardware.md` records historical 3.37 V bus/rail
 readings with approximately 9.9 kΩ pull-ups. The corrected pad map is user
 reported; powered PCA readback subsequently passed on the first rewired board.
 Michael measured blue/OE to black/GND at 3.34 V Off and 0.01 V On. These steady
-levels pass; startup transitions, physical LED output, and the second board
-remain unverified.
+levels pass. First-board unloaded connector Off/On/Off, Home power/brightness/
+temperature controls, and one cold power-cycle restoration also passed.
+Loaded startup transitions, physical LED output, and the second board remain
+unverified; do not turn those limits into requests to repeat completed probing.
 The first board reports 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 
@@ -58,7 +64,11 @@ Each lamp is one Matter Color Temperature Light (device type `0x010C`), with
 On/Off, real dimming, and temperature-only Color Control. Home's nonzero 1–100%
 brightness maps to stock nominal 1–10%; Home 100% is the 10% ceiling. Support
 143–344 mired. First boot is Off with level 57 (about Home 22%, stock 3%) and
-303 mired. At level 57, preserve raw warm/cool 6/2 at 303 mired and 3/6 at 200
+303 mired. Restore valid saved power, level, and temperature by default; an
+explicit startup Off remains supported. Reject new startup On/Toggle writes
+and normalize old On/Toggle policies to Restore. Keep startup level and
+temperature settings. Do not change this to unconditional Off at every boot.
+At level 57, preserve raw warm/cool 6/2 at 303 mired and 3/6 at 200
 mired. These are command regressions, not optical calibration. Low output has
 eight-bit PCA quantization. Do not advertise RGB or Adaptive Lighting.
 
@@ -66,13 +76,26 @@ Two physical lamps are two separately commissioned nodes grouped in Apple Home;
 firmware does not couple them or promise simultaneous output. The former
 3300 K/5000 K presets are optional Home scenes, not firmware endpoints. Preserve
 power, level, temperature, pairing, and startup intent across normal resets and
-flashes. Keep intended, acknowledged, and measured physical output distinct.
+flashes. Healthy Matter attributes report the durable command target during a
+fade; USB diagnostics retain the separate acknowledged intermediate frame.
+Known storage/output faults remain errors. WithOnOff at minimum level 1 is Off;
+ordinary level commands cannot change an Off target back to On during its fade.
+Keep intended, acknowledged, and measured physical output distinct.
 Network recovery must preserve intent and cannot be claimed from simulated tests.
 The first board (`KR-88:56:a6:39:ec:f4`) successfully joined Apple Home on
 2026-09-28 with two persisted Home fabrics. Preserve both; temporary test
 controllers were already removed. Routine bench checks must not unpair this
 commissioned board or erase its NVS. See `docs/validation-record.md` for
 successful commissioning evidence and the remaining physical checks.
+
+Recovery uses local radio/IP/transmit evidence, not Internet reachability or
+Home traffic. Keep 30-second radio-operation deadlines, 60-second local-health
+deadlines, capped 5–60-second transport retry delays, and the 15-second watchdog.
+Boot storage errors reported by the adapter as `StdIoError` retry while feeding
+the watchdog; firmware never requests an erase or factory reset. The SDK may
+repair storage pages. Malformed decoded records remain explicit faults.
+Firmware 0.1.1 recovery and reporting changes require their own live results;
+earlier bench passes do not establish the new image's behavior.
 
 Use Rust, Cargo, rustfmt, Clippy, and Rust tests. Follow `../triplet` and
 `../stillair` for compatible embedded conventions and preserve the pinned Matter

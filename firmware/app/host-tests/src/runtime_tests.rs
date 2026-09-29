@@ -104,6 +104,53 @@ fn first_boot_is_off_with_about_three_percent_and_3300k() {
 }
 
 #[test]
+fn reported_destination_is_stable_while_acknowledged_frames_change() {
+    let (_, r) = rig();
+    assert!(r.reported().is_err());
+    r.tick(0);
+    r.set_power(true).unwrap();
+    r.set_level_transition(254, false, 2000).unwrap();
+    r.set_temperature_transition(ColorTemperature::MIN, 2000)
+        .unwrap();
+    let target = r.snapshot().intended;
+    let revision = r.snapshot().revision;
+    assert_eq!(r.reported().unwrap(), target);
+    assert_ne!(r.acknowledged().unwrap(), target);
+    r.tick(1000);
+    assert_eq!(r.reported().unwrap(), target);
+    assert_ne!(r.acknowledged().unwrap(), target);
+    assert_eq!(r.snapshot().revision, revision);
+    let frame = r.acknowledged().unwrap();
+    r.stop_level_transition().unwrap();
+    assert_eq!(r.reported().unwrap().level, frame.level);
+    assert_eq!(r.reported().unwrap().temperature, ColorTemperature::MIN);
+    r.stop_temperature_transition().unwrap();
+    assert_eq!(r.reported().unwrap(), frame);
+}
+
+#[test]
+fn reported_targets_remain_unavailable_after_failed_storage_output_or_reboot() {
+    let (h, r) = rig();
+    r.tick(0);
+    h.fail_store.set(true);
+    assert!(r.set_power(true).is_err());
+    assert!(r.reported().is_err());
+    h.fail_store.set(false);
+    r.tick(5000);
+    assert!(r.reported().unwrap().on);
+    h.fail_output.set(true);
+    assert!(r.set_power(false).is_err());
+    assert!(r.reported().is_err());
+    h.fail_output.set(false);
+    r.tick(10000);
+    assert!(!r.reported().unwrap().on);
+    let revision = r.snapshot().revision;
+    assert!(r.prepare_reboot());
+    assert!(r.reported().is_err());
+    assert_ne!(r.snapshot().revision, revision);
+}
+
+#[test]
 fn state_is_saved_before_io_and_repeated_commands_do_not_write_flash() {
     let (h, r) = rig();
     r.tick(0);
@@ -203,6 +250,8 @@ fn invalid_records_are_preserved_until_local_off_repairs_only_intent() {
         let r = Runtime::load(Access(h.clone()), Output(h.clone()));
         r.tick(0);
         assert_eq!(r.snapshot().fault, Fault::InvalidRecord);
+        assert!(!h.actual.get().unwrap().on);
+        assert!(r.reported().is_err());
         assert_eq!(h.records.borrow()[&INTENT_KEY], bytes);
         assert!(r.set_power(true).is_err());
         r.off().unwrap();
@@ -217,7 +266,7 @@ fn legacy_presets_migrate_once_and_restore_the_selected_temperature() {
     let (h, _) = rig();
     h.records
         .borrow_mut()
-        .insert(INTENT_KEY, vec![2, 0, 0, 2, 2]);
+        .insert(INTENT_KEY, vec![2, 1, 1, 2, 2]);
     let r = Runtime::load(Access(h.clone()), Output(h.clone()));
     r.tick(0);
     let state = r.acknowledged().unwrap();
@@ -249,10 +298,11 @@ fn transient_read_failure_retries_and_applies_startup_only_once() {
     assert_eq!(r.snapshot().storage_failures, 2);
     h.fail_load.set(false);
     r.tick(10000);
-    assert!(!r.acknowledged().unwrap().on);
+    assert!(r.acknowledged().unwrap().on);
     r.tick(15000);
-    assert!(!r.acknowledged().unwrap().on);
-    assert_eq!(h.records.borrow()[&INTENT_KEY][1], 0);
+    assert!(r.acknowledged().unwrap().on);
+    assert_eq!(h.records.borrow()[&INTENT_KEY][1], 1);
+    assert_eq!(h.records.borrow()[&INTENT_KEY][5], 0);
 }
 
 #[test]
@@ -288,8 +338,9 @@ fn startup_settings_are_atomic_durable_and_do_not_change_live_output() {
     use rs_matter::dm::clusters::app::on_off::StartUpOnOffEnum as Startup;
     let (h, r) = rig();
     r.tick(0);
+    r.set_power(true).unwrap();
     h.fail_store.set(true);
-    assert!(r.set_startup(Some(Startup::On)).is_err());
+    assert!(r.set_startup(Some(Startup::Off)).is_err());
     assert!(r.set_startup_level(Some(254)).is_err());
     assert!(r
         .set_startup_temperature(Some(ColorTemperature::MIN))
@@ -298,11 +349,17 @@ fn startup_settings_are_atomic_durable_and_do_not_change_live_output() {
     assert_eq!(r.startup_level(), None);
     assert_eq!(r.startup_temperature(), None);
     h.fail_store.set(false);
-    r.set_startup(Some(Startup::On)).unwrap();
+    r.set_startup(Some(Startup::Off)).unwrap();
     r.set_startup_level(Some(254)).unwrap();
     r.set_startup_temperature(Some(ColorTemperature::MIN))
         .unwrap();
-    assert_eq!(r.acknowledged().unwrap(), LightState::default());
+    assert_eq!(
+        r.acknowledged().unwrap(),
+        LightState {
+            on: true,
+            ..LightState::default()
+        }
+    );
     h.fail_store.set(true);
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
@@ -312,7 +369,7 @@ fn startup_settings_are_atomic_durable_and_do_not_change_live_output() {
     assert_eq!(
         reboot.acknowledged().unwrap(),
         LightState {
-            on: true,
+            on: false,
             level: Level::MAX,
             temperature: ColorTemperature::MIN
         }
@@ -586,6 +643,122 @@ fn scene_recall_commits_all_axes_once_before_output_and_restores_the_destination
     let next_boot = Runtime::load(Access(h.clone()), Output(h.clone()));
     next_boot.tick(0);
     assert_eq!(next_boot.acknowledged().unwrap(), target);
+}
+
+#[test]
+fn reboot_restores_valid_power_and_settings_without_changing_other_records() {
+    for on in [false, true] {
+        let (h, r) = rig();
+        r.tick(0);
+        let settings = LightState {
+            on,
+            level: Level::new(180).unwrap(),
+            temperature: ColorTemperature::new(200).unwrap(),
+        };
+        r.request(settings).unwrap();
+        h.records.borrow_mut().insert(123, vec![1, 2, 3]);
+        h.events.borrow_mut().clear();
+        let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
+        reboot.tick(0);
+        reboot.tick(60_000);
+        assert_eq!(reboot.reported().unwrap(), settings);
+        assert_eq!(h.records.borrow()[&123], vec![1, 2, 3]);
+        if !on {
+            assert!(!h
+                .events
+                .borrow()
+                .iter()
+                .any(|event| event.contains("on: true")));
+        }
+    }
+}
+
+#[test]
+fn old_on_and_toggle_policies_migrate_to_restore_without_overriding_saved_off() {
+    use rs_matter::dm::clusters::app::on_off::StartUpOnOffEnum as Startup;
+    for power in 0..=3 {
+        for saved_on in 0..=1 {
+            let (h, _) = rig();
+            h.records
+                .borrow_mut()
+                .insert(INTENT_KEY, vec![3, saved_on, 180, 200, 0, power, 255, 0, 0]);
+            h.events.borrow_mut().clear();
+            let r = Runtime::load(Access(h.clone()), Output(h.clone()));
+            r.tick(0);
+            let expected_on = saved_on != 0 && power != 1;
+            assert_eq!(r.reported().unwrap().on, expected_on);
+            assert_eq!(r.reported().unwrap().level.get(), 180);
+            assert_eq!(r.reported().unwrap().temperature.get(), 200);
+            assert_eq!(
+                r.startup(),
+                if power == 1 { Some(Startup::Off) } else { None }
+            );
+            if !expected_on {
+                assert!(!h
+                    .events
+                    .borrow()
+                    .iter()
+                    .any(|event| event.contains("on: true")));
+            }
+            assert_eq!(
+                h.records.borrow()[&INTENT_KEY],
+                vec![
+                    3,
+                    u8::from(expected_on),
+                    180,
+                    200,
+                    0,
+                    u8::from(power == 1),
+                    255,
+                    0,
+                    0
+                ]
+            );
+        }
+    }
+}
+
+#[test]
+fn legacy_preset_startup_only_retains_an_explicit_off_for_the_selected_preset() {
+    for preset in 0..=1 {
+        for policy in 0..=3 {
+            for saved_on in 0..=1 {
+                let (h, _) = rig();
+                h.records
+                    .borrow_mut()
+                    .insert(INTENT_KEY, vec![2, saved_on, preset, policy, policy]);
+                let r = Runtime::load(Access(h.clone()), Output(h.clone()));
+                r.tick(0);
+                assert_eq!(r.reported().unwrap().on, saved_on != 0 && policy != 1);
+                assert_eq!(
+                    r.reported().unwrap().temperature.get(),
+                    if preset == 0 { 303 } else { 200 }
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn startup_migration_failures_stay_off_until_valid_saved_state_is_available() {
+    for fail_load in [false, true] {
+        let (h, _) = rig();
+        h.records
+            .borrow_mut()
+            .insert(INTENT_KEY, vec![3, 1, 180, 200, 0, 2, 255, 0, 0]);
+        h.fail_load.set(fail_load);
+        h.fail_store.set(true);
+        h.events.borrow_mut().clear();
+        let r = Runtime::load(Access(h.clone()), Output(h.clone()));
+        r.tick(0);
+        assert!(r.reported().is_err());
+        assert!(!h.actual.get().unwrap().on);
+        h.fail_load.set(false);
+        h.fail_store.set(false);
+        r.tick(5000);
+        assert!(r.reported().unwrap().on);
+        assert_eq!(r.reported().unwrap().level.get(), 180);
+    }
 }
 
 #[test]

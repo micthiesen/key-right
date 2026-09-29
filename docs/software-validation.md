@@ -1,21 +1,26 @@
 # Software verification
 
-## 2026-09-28 C3 single-light implementation
+## 2026-09-28 final firmware hardening, 0.1.1
 
 The current target is `esp32c3` / `riscv32imc-unknown-none-elf`, with one Matter
 Color Temperature Light per physical lamp. Home's nonzero brightness range maps
 to stock nominal 1–10%; temperature spans 143–344 mired.
 
-The following checks passed on September 28 for the C3 single-light conversion
-and passed again after the bench-discovered arena fix in `ec1cff9`. These gates
-run without accessing connected hardware; physical results are recorded below.
+The final review covers Home target reporting, minimum-level power semantics,
+restore-or-Off startup, and recovery from local network/storage faults. The
+following software gates passed after these changes. They do not access the
+connected board; final-flash observations belong in the validation record.
 
 | Check | Result |
 | --- | --- |
-| `sh scripts/check.sh` | Passed: formatting, strict Clippy, 26 Rust tests, CLI simulation, and 13 Python tests |
-| `sh scripts/check-firmware.sh` | Passed: 36 application host tests, formatting, strict host/C3 Clippy, both release builds, and linked-stack checks |
+| `sh scripts/check.sh` | Passed: formatting, strict Clippy, 26 Rust tests, CLI simulation, and 29 Python tests |
+| `sh scripts/check-firmware.sh` | Passed: 71 application host tests, formatting, strict host/C3 Clippy, real/simulated/radio-diagnostic release builds, and linked-stack checks |
 | Stock mixing, level-57 reference frames, low/high limits, and quantization tests | Passed; includes full-frame verification, reset/readback faults, and updates without repeated OE blanking |
 | Single-light commands, persistence migration, and recovery tests | Passed; includes independent transitions, Stop, timed Off, global scenes, validated scene staging, single-record recall, and failures |
+| Home target reporting | Real cluster getter tests cover target values during fades, immediate Off intent, minimum-level Off, fault reads and recovery. Report-loop tests cover data versions, countdown-only updates and completion |
+| Startup policy | Saved On and Off restore; missing/corrupt/unreadable intent cannot energize. Old On/Toggle startup overrides migrate to Restore; new On/Toggle writes reject |
+| Boot storage retries | Five tests cover the production retry helper, credential restore, partial two-fabric reload, scenes, capped waits/watchdog feeds and permanent decoded-data errors |
+| Local network recovery | IPv6 readiness, internal-error streaks, associated radio health, capped backoff, TX stall/escalation, and packet progress through a full queue are covered. These are fault-policy tests, not reproduced radio-driver failures |
 | C3 real and simulated release images and partition fit | Both `sh scripts/flash.sh --check` and `sh scripts/flash.sh --bench --check` passed |
 | Flash-helper chip/capacity preflight and rejection behavior | Nine mocked flasher/ELF tests passed; includes unknown-capacity fallback, wrong chip, undersized flash, stale Cargo paths, and insufficient stack |
 | Documentation links and `git diff --check` | Passed; local targets in all 13 Markdown documents exist, photo conversion visually checked |
@@ -28,14 +33,26 @@ has 4,063,232 bytes available within the planned 4 MiB flash layout.
 
 | Image | Application image bytes | Partition used | Linked main-stack reservation |
 | --- | ---: | ---: | ---: |
-| `key-right` | 1,914,272 | 47.11% | 57,912 bytes |
-| `key-right-bench` | 1,896,336 | 46.67% | 59,288 bytes |
+| `key-right` | 1,931,808 | 47.54% | 57,600 bytes |
+| `key-right-bench` | 1,912,448 | 47.07% | 58,968 bytes |
 
 Both configure 102,400 bytes of heap: 36,080 bytes in ordinary DRAM and 66,320
 bytes in the SDK's reclaimed bootloader RAM. A portable ELF gate rejects a
 linked main-stack reservation below 16 KiB. The initial C3 layout reserved only
 4,424 bytes; the heap split above addresses that finding. Linked
 reservations are not runtime stack or heap high-water measurements.
+
+The pinned Matter/ESP revisions are unchanged. The new direct
+`embassy-net-driver = 0.2.0` dependency names the trait already used by the
+SDK; it does not upgrade the network stack. Basic Information software version
+is 2 / `0.1.1` so the installed image can be identified.
+
+The first review found target/current fade confusion, minimum-level On/Off and
+Off-fade relighting errors, stale connection flags, and an unrecoverable boot
+read-error path. Follow-up review caught busy-traffic false TX-stall detection
+and recovery-history accounting; regression tests cover those corrections.
+Original-code scratch tests failed for target getter, minimum-level Off,
+Off-fade relighting, and startup On overriding saved Off.
 
 The first physical boot of `fb241df` panicked with `Out of bump memory` in
 `rs-matter-stack` and entered a watchdog reset loop. Commit `ec1cff9` increases

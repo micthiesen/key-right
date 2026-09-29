@@ -10,4 +10,5 @@ publish = false
 key-right-core = { path = "../../core" }
 rs-matter = { version = "=0.2.0", default-features = false, features = ["std", "rustcrypto", "log"] }
 embassy-time = { version = "0.5", features = ["std", "generic-queue-8"] }
+embassy-net-driver = "=0.2.0"
 log = "0.4"

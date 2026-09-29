@@ -2073,12 +2073,13 @@ dependencies = [
 
 [[package]]
 name = "key-right-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "bt-hci",
  "embassy-embedded-hal",
  "embassy-executor",
  "embassy-futures",
+ "embassy-net-driver",
  "embassy-sync 0.8.0",
  "embassy-time",
  "embedded-io-async 0.7.0",

@@ -13,9 +13,12 @@ controls. Two lamps remain separate Matter nodes and can be grouped in Home.
 On **2026-09-28**, Michael completed the wiring and powered the assembly from a
 13 V bench supply with the LEDs disconnected. He measured 3.345 V at the ESP.
 USB confirmed an ESP32-C3 with 4 MiB flash, and the real firmware was flashed
-after backing up the original image. Bench testing remains in progress; the
-[physical validation record](validation-record.md) owns individual results and
-pending acceptance checks.
+after backing up the original image. The first board subsequently passed PCA
+readback, steady OE levels, unloaded connector Off/On/Off, Apple Home power,
+brightness and temperature controls, and one cold power-cycle restoration.
+Michael considers bench probing complete. Firmware 0.1.1 hardening awaits its
+own live verification; loaded output/startup and the second board remain
+unverified. The [physical validation record](validation-record.md) owns results.
 
 The firmware target is `esp32c3`, using `riscv32imc-unknown-none-elf`. Software
 validation and physical acceptance are separate; passing build gates does not
@@ -38,9 +41,9 @@ lamp design, not a general channel-discovery or calibration platform.
 | Item | Project requirement or evidence | Remaining limit |
 | --- | --- | --- |
 | ESP board | `ESP32-C3_MINI_V1`, target `esp32c3` | Read chip identity and flash capacity before writing; plan for 4 MiB, no PSRAM |
-| Power and signal wiring | Five-wire interface with corrected U4 pad map in hardware.md; ESP assignments unchanged | Finish and continuity-check each board's rework before its powered tests; radio-load rail behavior unverified |
-| PCA address and bus | Seven-bit `0x15`, 100 kHz, from stock firmware | Physical I²C acknowledgement/readback pending |
-| Output configuration | Stock `MODE2=0x14`; individual PWM; LED0 warm, LED4 cool | Physical bank response and off-state pending |
+| Power and signal wiring | Corrected U4 map in hardware.md; first-board continuity/short checks reported complete; ESP assignments unchanged | Do not repeat routine probing; investigate a new fault if one appears |
+| PCA address and bus | Seven-bit `0x15`, 100 kHz; first-board writes/readback passed | Bus timing is not measured by register readback |
+| Output configuration | Stock `MODE2=0x14`; LED0/warm drives F connectors and LED4/cool drives W connectors in unloaded checks | Connected-panel colour, brightness and startup remain unobserved |
 | Brightness range | Stock nominal 1% through 10%, mapped across Home's nonzero brightness range | Stock scale, not measured optical brightness or raw electrical PWM duty |
 | Temperature range | Stock 143 through 344 mired, approximately 6993 through 2907 K | Command range, not optical calibration |
 | Initial level | Matter level `57`, approximately Home 22% and stock nominal 3% | Preserve raw warm/cool `6/2` at 303 mired and `3/6` at 200 mired |
@@ -60,7 +63,9 @@ Do not advertise RGB/hue/saturation control or Adaptive Lighting support.
 Home's nonzero 1% through 100% brightness range maps to stock nominal 1% through
 10%. **Home 100% means stock nominal 10%**, the user-selected ceiling; it does
 not unlock the stock lamp's full output. Dimming must change the PCA commands.
-Use Matter levels 1 through 254 for the nonzero range and level 0 for Off.
+Stored brightness spans Matter levels 1 through 254. Commands with On/Off
+coupling turn Off at the advertised minimum level 1, including a requested 0
+clamped to that minimum; an ordinary level command preserves power intent.
 Retain brightness and temperature intent while off. The first-boot state is Off
 with level `57` and 303 mired (about 3300 K) ready for the next On command.
 
@@ -71,6 +76,10 @@ destination once, not each interpolated frame. An explicit Off cancels pending
 transitions. Scene recall saves the complete power/level/temperature target
 together and reports actuation failures. Timed On/Off and OffWithEffect use the
 same state owner; effect frames do not replace the saved brightness setting.
+Healthy Matter reads/reports expose the durable target immediately, keeping
+intermediate acknowledged frames separate in diagnostics. Failed output or
+storage does not become a successful target report. A level command without
+On/Off coupling cannot relight an Off target during its fade.
 
 Support the full stock temperature command range, 143 through 344 mired. At the
 initial level `57`, 303 mired must reproduce warm/cool raw PCA values `6/2`, and
@@ -95,16 +104,20 @@ RESET buttons and a bare ESP32-C3 package. It is not an official
 The physical connection map is owned by [hardware.md](hardware.md), including
 Michael's corrected U4 pad positions. He confirmed the ESP end is correct:
 SDA remains GPIO4, SCL GPIO5, and OE GPIO6. No firmware pin change is required.
-Verify the reworked complete paths to PCA pins 27/SDA, 26/SCL, and 23/OE with
-power removed before resuming powered tests.
+Accept the first board's reported corrected continuity and short checks.
+The second board proceeds to flashing and live tests without another routine
+probing sequence. Investigate a new wiring fault with power removed if evidence
+requires it; do not repeat completed measurements as a prerequisite.
 
 The reported measurements are 13 V input, 3.37 V PCA VDD and idle SDA/SCL/OE,
 approximately 9.9 kΩ from each signal to VDD, approximately 20 kΩ SDA-to-SCL,
 approximately 1 kΩ unpowered VDD-to-GND, and approximately 0–0.1 Ω continuity
 from each selected signal pad to its PCA pin. These are historical reports,
-not verification of the corrected wiring. Retain the existing pull-ups and use
-100 kHz; radio-load power stability remains unverified. Provenance is recorded
-in [hardware.md](hardware.md) and the [validation record](validation-record.md).
+superseded as wiring evidence by the reported rework checks and successful
+powered PCA readback. Retain the existing pull-ups and use 100 kHz. Radio-load
+rail stability was not measured; that limit is not a request for more routine
+probing. Provenance is in [hardware.md](hardware.md) and the
+[validation record](validation-record.md).
 
 GPIO6 must be open-drain: set its latch HIGH before enabling output mode;
 release HIGH through the existing pull-up to disable configured outputs, and
@@ -130,7 +143,8 @@ paths.
 For initial bench work, leave the LEDs disconnected, verify input polarity, and
 record the bench PSU voltage and chosen current limit before energizing the
 stock board. Apply nominal 13 V at the lamp input, never at the C3 `3.3` or
-`5V` pad. No current-limit value or successful powered result has been supplied.
+`5V` pad. The first board powered successfully at 13 V and measured 3.345 V at
+the ESP; a bench current-limit value was not supplied.
 
 OE HIGH selects the PCA's programmed disabled-output state; it does not itself
 prove that the lamp is off. Stock `MODE2=0x14` and PCA power-on defaults differ.
@@ -149,14 +163,21 @@ ESP, and no independent output cutoff.
 - Use one serialized state owner for Matter and USB commands. Distinguish
   intended state, acknowledged PCA register state, and measured physical output.
   Never report a known failed write as successful actuation.
-- Preserve durable power, level, temperature, startup policy, and Matter
-  membership across ordinary restarts and flashes. Migrate prior saved preset
-  intent by applying its startup options once, selecting the corresponding
-  temperature at level `57`, and using Restore as the new startup policy without
-  erasing commissioning. Startup first attempts stock Off, then reconciles saved
-  intent and the lamp's Matter startup policy. Do not replace this with unconditional
-  Off on every restart. Corrupt storage must report a fault rather than silently
-  become a successful restore.
+- Preserve durable power, level, temperature, and Matter membership across
+  ordinary restarts and flashes. Startup first releases OE and attempts stock
+  zero PWM, then restores validated saved intent. Missing intent defaults Off.
+  Retain explicit startup Off and startup level/temperature settings; reject
+  new On/Toggle startup policies and migrate old On/Toggle to Restore.
+  Version-2 preset migration retains saved power and selected temperature at
+  level `57`, preserving an explicit Off policy for the selected preset.
+  This minimizes startup output once the ESP runs; it cannot guarantee darkness
+  before the ESP boots. Do not replace restoration with unconditional Off.
+  Corrupt storage reports a fault rather than a successful restore. Retry boot
+  adapter-reported `StdIoError` with 5–60-second capped backoff and watchdog
+  feeds. Firmware must not request an erase or factory reset. The pinned
+  adapter also maps storage-format/buffer errors to this code and may repair
+  storage pages during reads; logical fabric preservation is the contract.
+  Malformed application or Matter records detected during decoding remain faults.
 - Avoid unnecessary flash writes. Keep pairing codes and Wi-Fi credentials out
   of source control and routine logs. Provide actual pairing data through the
   explicit local USB command, using the existing development Matter identity.
@@ -176,10 +197,20 @@ ESP, and no independent output cutoff.
   invalidate acknowledgement and attempt stock Off/OE release. Preserve intended
   state and the existing bounded recovery attempts that reinitialize, verify,
   and reapply it. Recovery is not evidence of physical Off during the fault.
-- Wi-Fi, AP, local-address, and Matter transport interruptions must recover
-  without discarding intent or commissioning. Do not reboot solely because the
-  internet or a Home controller is absent. Retain transport deadlines, retry
-  backoff, watchdog coverage, and useful diagnostics.
+- Recover Wi-Fi, AP, local-address, and Matter transport interruptions without
+  discarding intent or commissioning. Radio operations have 30-second deadlines.
+  Three consecutive internal driver errors, 60 seconds of failed RSSI queries
+  while associated, or 60 seconds without usable local IPv6 while associated
+  recreate the transport. IPv4 alone does not establish Matter readiness.
+  Transport retries back off from 5 to 60 seconds and reset after 120 seconds
+  of actual local health. Neither Internet reachability nor Home traffic is a
+  health requirement.
+- Monitor transmit capacity/progress on the existing network interface. A
+  60-second linked stall first recreates transport; persistence after recreation
+  triggers a full MCU reset with durable intent and fabrics retained. Successful
+  transmit progress clears the stall timer, including under busy traffic.
+  Keep the 15-second execution watchdog. These detect specified local failures;
+  they do not prove recovery from every possible Matter or network hang.
 
 PCA register semantics come from the
 [NXP datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf);
@@ -233,18 +264,20 @@ Verify pin modes and target/flash-fit checks for the C3.
 
 The physical acceptance sequence is:
 
-1. **LEDs disconnected:** record PSU settings, chip ID/capacity, firmware commit,
-   safe USB connection, flashing, console access, and rail behavior during boot
-   and radio activity. Verify PCA `0x15` and stock register readback. Check reset
-   reasons for brownouts or a reset loop. These results cannot prove light output.
+1. **Firmware update:** preserve completed first-board probing. Record chip
+   identity/capacity, image/commit, safe USB connection and flash outcome, then
+   check status, PCA verification and Home operation. Preserve both existing
+   Home fabrics. The second board follows preflight, flash and live tests without
+   another routine meter-probing stage. Investigate faults if they appear.
 2. **LEDs connected after power is removed:** observe Off, low and high brightness,
    temperature endpoints and intermediate values, the level-57 reference points,
    bank identity, cold power-up, controller reset, and saved-state restoration.
    Record quantization, flashes, incorrect banks, unexpected output, or loss of
    control. Confirm Home 100% respects the stock nominal 10% ceiling.
-3. **Completed housing:** pair with Apple Home using the actual antenna hardware,
-   verify one light tile with power, brightness, and temperature per lamp. Group
-   two separately commissioned lamps in Home and verify both follow those
+3. **Completed housing:** retain the first board's pairing and commission the
+   second with its actual antenna hardware. Verify one light tile with power,
+   brightness, and temperature per lamp. Group the two separately commissioned
+   lamps in Home and verify both follow those
    controls. Interrupt one lamp's Wi-Fi briefly, confirm the other still works,
    and verify automatic recovery with intent retained. The development host
    must remain reachable independently of the lamp's Wi-Fi.
