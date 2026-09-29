@@ -13,11 +13,14 @@ boot, watchdog recovery of saved On and reboot recovery of saved Off.
 After delayed Home resubscription, the final target/Off card check also passed.
 The second board passed PCA checks and saved-Off reboot on the same image,
 then joined Home with both fabrics persisted. Its final control/Off check passed
-after restarting Home cleared an idle spinner. Both lamps are now assembled;
-Michael reports good overall operation, with a faint central orange glow while
+after restarting Home cleared an idle spinner. Michael subsequently reported
+good assembled operation of both lamps, with a faint central orange glow while
 Off and powered. See the [glow investigation](off-glow-investigation.md).
-Firmware 0.1.4 adds smooth physical transitions and is prepared for a later
-reflash. The installed firmware is still 0.1.3; no new hardware pass is implied.
+Firmware 0.1.4 adds smooth physical transitions. Board A, the first controller
+ending `39:ec:f4`, was updated on September 29: both Home fabrics loaded, saved
+On restored, PCA checks passed, and saved Off survived a software reboot with
+Wi-Fi/IP ready. Board B remains on 0.1.3. Visual fades and the resistor trial
+remain unverified.
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 

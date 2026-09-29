@@ -16,6 +16,11 @@ saved Off and ready for unpowered assembly. No further routine probing is owed.
 Record each board's image and results in [the validation record](validation-record.md).
 Passing either board does not establish the other's untested behavior.
 
+On September 29, board A (the first controller, ending `39:ec:f4`) was updated
+to 0.1.4. It restored both Home fabrics and saved On, passed real PCA checks,
+then restored saved Off after a software reboot with zero PWM and Wi-Fi/IP ready.
+Board B remains on 0.1.3. Visual fades and the resistor trial remain unverified.
+
 ## 1. Power and preparation
 
 With lamp wiring attached, use lamp/bench power and USB with **VBUS/5 V blocked,

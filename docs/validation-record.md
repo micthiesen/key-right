@@ -5,17 +5,20 @@ This record covers Michael's original full-size Elgato Key Light and its wired
 credentials out of this file. Distinguish reported measurements, firmware
 evidence, controller acknowledgements, and observed light output.
 
-**Current Home status:** both boards run firmware 0.1.3 and joined Home on
-2026-09-28, each with two persisted Home fabrics. Preserve all of them.
+**Current Home status:** board A (first controller, `39:ec:f4`) runs firmware
+0.1.4; board B (`39:f4:14`) remains on 0.1.3. Both joined Home on 2026-09-28,
+each with two persisted Home fabrics. Both fabrics loaded after board A's update.
+Preserve all of them.
 The first board passed the physical bench checks and controlled recovery tests
 below; Michael now reports successful overall operation of that lamp. The second
 board passed PCA register checks, saved-Off reboot and Home control checks.
 Michael confirmed Off held without a spinner after refreshing Home. The second
-board passed the final saved-Off check before assembly. Both lamps are now
-assembled and working well per Michael. He reports faint orange glow near the
-centre while Off and powered. He confirms actual panel emission, also visible
+board passed the final saved-Off check before assembly. Both assembled lamps
+worked well per Michael before board A was connected for its update. He reports
+faint orange glow near the centre while Off and powered. He confirms actual panel emission, also visible
 at the edges, and rules out the ESP indicator; optical darkness is unresolved.
-Probing is complete. Firmware 0.1.4 is prepared for a future reflash, not installed.
+Probing is complete. Board A's 0.1.4 flash and saved-Off reboot passed below;
+visual fades and the resistor trial remain unverified. Board B awaits its update.
 Detailed loaded results and remaining limits are recorded per board below.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
@@ -580,13 +583,56 @@ probing or reflash is required. Loaded operation, grouping and long-term radio
 behavior remain separate observations; the first board's deliberate network and
 watchdog fault tests were not repeated on the second board.
 
+## Board A update to 0.1.4, 2026-09-29
+
+Michael connected board A and requested the prepared firmware. Native USB
+`/dev/cu.usbmodem2101` identified it as the first controller,
+`KR-88:56:a6:39:ec:f4`. Before flashing, 0.1.3 reported saved On, level 39 and
+343 mired, with matching acknowledgement, no faults and Wi-Fi/IP ready.
+
+The normal `hardware-light` image from checkout
+`0848f101eadc60396132ffe5324bdabe509d53dc` (firmware implementation `c626863`)
+was built and flashed at 19:09:31 UTC. Both software gates had passed on this
+unchanged firmware before the flash. Chip/capacity preflight detected ESP32-C3
+revision v0.4, 40 MHz crystal and 4 MiB flash. The verified application occupied
+1,931,440 / 4,063,232 bytes; linked main-stack reservation was 41,200 bytes.
+ELF SHA-256: `4aa2ae5f8ae1c5f9d96a45b761312342bf0f4ff8490f111b75dd0d2d50b6b629`.
+The ordinary flash path preserved NVS, with no erase or commissioning command.
+
+| Check | Observed result |
+| --- | --- |
+| New real firmware | USB reported hardware mode, firmware 0.1.4 and the same board identity; reset reason `CoreUsbUart` |
+| Saved state after flash | At 27,909 ms uptime: On, level 39, 343 mired restored and acknowledged; stock-percent numerator 595/253, both transitions settled |
+| Actual PCA readback | `verify` passed; `MODE1=0x80`, `MODE2=0x14`, warm PWM 5, cool PWM 0, all other PWM zero, GRPPWM `0xff`, GRPFREQ 0, LEDOUT0–3 `0xaa` |
+| Home storage | Boot logs loaded fabric 1 and fabric 2 from storage after the flash and after the later software reboot; no new pairing performed |
+| Network after flash | Wi-Fi connected at -59 dBm, local IP and IPv4 ready; one Wi-Fi attempt, no timeouts or transport restarts |
+| Off before reboot | Local `off` and `verify` passed. `reboot` acknowledged `intent_preserved=true off_registers_verified=true` |
+| Saved-Off restoration | At 35,208 ms after `CoreSw` reset: intended and acknowledged Off, level 39 and 343 mired retained; physical-output numerator 0; transitions settled; `verify` passed and all sixteen PCA PWM registers read zero |
+| Network after reboot | Wi-Fi connected at -56 dBm, local IP and IPv4 ready; one attempt, no timeouts/restarts |
+| Faults | Both settled checks: `fault=None`, zero output/storage failures and no output recoveries |
+
+Board A is left saved Off. The flash request did not report resistor installation
+or an optical result. No new meter probing, Home interaction, measured physical
+output, visual fade, cold-start darkness or closed-housing radio check was
+performed. Existing Home fabrics are retained; visual control confirmation is
+still separate. Board B remains on 0.1.3.
+
+Private captures: `local/board-a-014-20260929.log` and
+`/tmp/key-right-board-a-014-flash.log`. Startup USB-log drops were reported;
+the observed restoration/readback results above do not imply a complete log.
+Both project software gates passed again after recording the update. A later
+optional status request found `/dev/cu.usbmodem2101` absent, and port listing
+returned no device. This happened after the successful reboot/status/PCA checks;
+the disconnect cause is unknown and the last verified state remains saved Off.
+
 ## LED-connected observations and remaining checks
 
 After both boards were released for reassembly, Michael reported that both
 lamps work great. Record this as successful overall operation, without
 inferring individual startup-flash, optical-calibration, radio-recovery or
-grouping checks from that report. The installed image is firmware 0.1.3,
-commit `b43e6bd`, on both lamps.
+grouping checks from that report. The installed image at that observation was
+firmware 0.1.3, commit `b43e6bd`, on both lamps. Board A was later updated to
+0.1.4 as recorded above; no new optical result is implied.
 
 On 2026-09-29 he reported a faint orange glow, concentrated near the centre,
 while Off with power connected. He subsequently clarified that the panel LEDs
@@ -607,7 +653,7 @@ LEDs cannot establish the remaining loaded checks below.
 
 | Check | Observation |
 | --- | --- |
-| Firmware commit and LED reconnection date | Both run `b43e6bd` / 0.1.3; assembled operation reported September 29 |
+| Firmware commit and LED reconnection date | Both were observed assembled on `b43e6bd` / 0.1.3 on September 29. Board A later updated to 0.1.4; post-update optical results pending |
 | Off after application initialization | Confirmed panel emission at centre, edges and other areas; ESP indicator ruled out; electrical cause unresolved |
 | Home low/high brightness, stock nominal 1%/10% limits | Pending |
 | Temperature minimum/maximum, 143/344 mired | Pending |
@@ -626,10 +672,11 @@ LEDs cannot establish the remaining loaded checks below.
 | USB removed, ordinary lamp-powered operation | Pending |
 
 Firmware 0.1.4 adds 400 ms eased physical transitions, true-zero fade endpoints,
-and separate target reporting. It has not been flashed or observed on the
+and separate target reporting. It is now installed on board A, with register
+and saved-Off reboot checks passed, but has not been visually checked on the
 panels. Software results belong in [software validation](software-validation.md).
-At the next requested reflash, retain NVS and verify the fades, target display,
-saved-Off reboot visually, with the panel-glow investigation treated separately.
+After reassembly, verify fades, target display and saved-Off reboot visually;
+keep the panel-glow investigation separate. Board B awaits its requested update.
 Routine meter probing remains complete. Eight-bit PWM can still produce visible
 steps near minimum output.
 

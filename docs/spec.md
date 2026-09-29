@@ -20,8 +20,8 @@ Michael considers bench probing complete. Firmware 0.1.3 passed real Wi-Fi
 reconnection, repeated full transport recreation, watchdog recovery of saved
 On, and reboot recovery of saved Off. Home's card temporarily showed stale state
 after the resets; once its subscription returned, the final target/Off check
-passed. The second board runs the same installed image and has passed real PCA
-checks, saved-Off reboot, Home commissioning and the final Home control/Off check. Its
+passed. On 0.1.3, the second board passed real PCA readback, saved-Off reboot,
+Home commissioning and the final Home control/Off check. Its
 idle spinner cleared after restarting Home. Michael now reports that both
 assembled lamps work well, with a faint orange glow near the centre while Off
 and powered. He confirms that the LED panel itself emits it, including at the
@@ -32,9 +32,12 @@ optical behavior and two-lamp grouping remain unverified.
 The [physical validation record](validation-record.md) owns per-image results,
 including the rejected intermediate builds.
 
-Firmware **0.1.4 / software version 5** prepares smooth output transitions for
-the next planned disassembly. It is not yet flashed. Preserve both lamps'
-existing fabrics and intent; do not repeat completed routine meter probing.
+Firmware **0.1.4 / software version 5** adds smooth output transitions. Board A
+(`KR-88:56:a6:39:ec:f4`) was updated on September 29 and passed saved-state,
+PCA readback and saved-Off reboot checks; both Home fabrics loaded and Wi-Fi/IP
+returned. Board B remains on 0.1.3. Visual transitions and the resistor trial
+remain unverified. Preserve both lamps' existing fabrics and intent; do not
+repeat completed routine meter probing.
 
 The firmware target is `esp32c3`, using `riscv32imc-unknown-none-elf`. Software
 validation and physical acceptance are separate; passing build gates does not

@@ -12,8 +12,10 @@ stage, residual control drive, or intermittent activation. The evidence does
 not distinguish a steady current from short pulses. Colour alone does not
 identify which of the four output connectors is affected.
 
-Firmware **0.1.4 remains prepared, not flashed**. Its animation change retains
-0.1.3's settled-Off configuration and is not a demonstrated glow fix.
+Firmware **0.1.4 was flashed to board A on September 29**; board B remains on
+0.1.3. Board A passed settled-Off PCA checks and a saved-Off reboot. Its animation
+change retains 0.1.3's settled-Off configuration and is not a demonstrated glow
+fix. Resistor installation and its optical result have not yet been reported.
 
 ## Evidence and limits
 

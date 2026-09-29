@@ -1,9 +1,11 @@
 # Software verification
 
-## 2026-09-29 smooth transitions, 0.1.4 (not flashed)
+## 2026-09-29 smooth transitions, 0.1.4
 
 Both software gates passed for the prepared release, with the installed lamps
-left on 0.1.3. Basic Information software version is **5 / `0.1.4`**. Dependency
+left on 0.1.3 at that time. The subsequent board-A update is recorded in
+[physical validation](validation-record.md#board-a-update-to-014-2026-09-29).
+Basic Information software version is **5 / `0.1.4`**. Dependency
 pins, NVS layout, network recovery, board wiring and settled PCA configuration
 are unchanged.
 
@@ -37,9 +39,9 @@ application directory with the explicit C3 target; all three MCU variants passed
 No SDK or dependency change was needed.
 
 These checks do not establish visual smoothness, darkness, or live Home behavior
-on 0.1.4. No board was connected, flashed, reset or probed for this release.
-Observe the fades and check retained Home targets after the next requested
-update. Eight-bit PCA quantization remains visible in principle at low output.
+on 0.1.4. No board was connected, flashed, reset or probed for these software checks.
+Observe the fades and check retained Home targets after each updated lamp is
+reassembled. Eight-bit PCA quantization remains visible in principle at low output.
 The ELF files remain under
 `firmware/app/target/riscv32imc-unknown-none-elf/release/`.
 
