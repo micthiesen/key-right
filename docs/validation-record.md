@@ -7,7 +7,10 @@ evidence, controller acknowledgements, and observed light output.
 
 **Current Home status:** Michael confirmed successful addition of the first
 board on 2026-09-28. Both Home fabrics completed commissioning and were persisted.
-Retain both fabrics. LEDs remain disconnected and loaded acceptance is pending.
+Home power, brightness and temperature commands now pass unloaded bench checks,
+including control after one cold power cycle. The final state is verified Off,
+with all four LED connectors measured near zero. Retain both fabrics. The board
+is ready for unpowered reassembly; LED-connected acceptance remains pending.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
 the error at the Key Light's U4 pads and confirmed the ESP end is correct. On
@@ -300,10 +303,70 @@ The final read-only console check at 491,439 ms uptime reported intended and
 acknowledged Off, level 57, 303 mired, Wi-Fi connected at -64 dBm, IPv4/local-IP
 ready, one connection attempt, zero network timeouts/restarts, and no
 output/storage/recovery fault. PCA `verify` passed. Serial and AP captures were
-closed after success. Both Home fabrics remain intact; no subsequent reboot,
-unpairing, or NVS erase was performed. Status receipt:
-`local/home-paired-status.log`. Home tile controls, power-cycle recovery, the
-second physical board, and loaded light behavior remain separate checks.
+closed after success. Both Home fabrics were retained, with no unpairing or NVS
+erase. Status receipt: `local/home-paired-status.log`. Subsequent Home controls
+and cold power-cycle checks are recorded below; the second physical board and
+loaded light behavior remain untested.
+
+### Apple Home controls with panels disconnected
+
+The first board remains on normal image `db228e2`, with both Home fabrics intact.
+Michael operated Home; the agent used only read-only USB status, register and
+verification commands during the control checks. Instrument: DC multimeter.
+Each voltage below is across the two pins of the named connector, with no LED
+panels attached. Private serial receipts are in
+`local/home-controls-bench-20260929.log`.
+
+| Home setting | Settled level / mired | PCA warm/cool | F-1 / F-2 | W-1 / W-2 |
+| --- | --- | --- | --- | --- |
+| 100%, warmest selected | 254 / 341 | 22 / 0; `verify` passed | Approximately 13 V each | Near 0 V each |
+| 100%, coolest selected | 254 / 146 | 0 / 22; `verify` passed | Near 0 V each | Approximately 13 V each |
+| Approximately 50%, coolest | 128 / 146 | 0 / 12; `verify` passed | Not measured | Not measured |
+| Lowest nonzero selection, coolest | 4 / 146 | 0 / 1; `verify` passed | Not measured | Approximately 0.2 V each |
+| Off in Home after cold power cycle | 4 / 146, Off | 0 / 0; all PWM zero, `verify` passed | Near 0 V each | Near 0 V each |
+
+Home reached the configured maximum level. The warm-only command energized the
+F connectors while the W connectors remained near zero. This associates those
+connector banks with the commanded channel; emitted warm/cool colour is still
+unobserved. At 787,129 ms uptime, intended and acknowledged states agreed,
+Wi-Fi remained connected, and output/storage/recovery counters were zero.
+Home's selected warm endpoint reported 341 mired rather than the advertised
+maximum of 344; both produce the observed `22/0` frame at level 254.
+The coolest selected setting reported 146 mired and produced `0/22`; Michael
+reported that the connector voltages swapped. The two banks therefore respond
+independently to the expected warm/cool channel commands. This is unloaded
+electrical evidence, not confirmation of panel colour or LED current.
+The Home brightness sweep reduced the cool PWM from 22 to 12 to 1, while the
+warm channel remained zero. The lowest selected UI value delivered level 4,
+not the protocol minimum of 1. At 922,921 ms uptime the intended/applied low
+setting agreed, and output/storage/recovery counters remained zero.
+Michael then reported approximately 0.2 V at both W connectors at this minimum
+setting. This is a further unloaded electrical change, not a duty-cycle or
+optical measurement.
+
+Michael then switched the bench supply off for five seconds and back on, with
+the VBUS-blocked USB cable attached and panels disconnected. At 8,513 ms after
+`ChipPowerOn`, intended and acknowledged On, level 4, and 146 mired had been
+restored without USB control commands. At 16,917 ms, Wi-Fi and local IP were
+ready, with one connection attempt and no network timeout/restart; IPv4 was
+still pending in that snapshot. The PCA read `0/1` and `verify` passed, with
+no output/storage/recovery faults. Boot/status evidence is in
+`local/home-power-cycle-bench-20260929.log` and the control log above. This
+establishes one cold power-cycle restoration with unloaded outputs, not
+glitch-free startup or behaviour with the panels connected.
+
+After the restart, Michael turned Off in Home and confirmed all four connector
+voltages were near zero. At 59,042 ms uptime, the console confirmed intended
+and acknowledged Off, all PWM registers zero, and successful verification.
+Wi-Fi, local IP, and IPv4 were ready; output/storage/recovery counters and
+network timeouts/restarts remained zero. No re-pairing or USB output command
+was required. The serial monitor was closed afterward. The unloaded bench
+checks support proceeding to unpowered reassembly and LED reconnection.
+
+The session changed documentation only. Both `sh scripts/check.sh` and
+`sh scripts/check-firmware.sh` passed again; no image was flashed during these
+Home control checks. Actual loaded output and startup observations remain open
+in the acceptance table below.
 
 ## LED-connected acceptance pending
 

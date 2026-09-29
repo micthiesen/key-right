@@ -213,8 +213,35 @@ the connector, reference point, instrument, requested state, and measured value.
 Do not interpret an unloaded connector voltage as LED current or brightness;
 PWM timing needs an oscilloscope or logic measurement at an appropriate node.
 
-After the disconnected-LED checks support reassembly, request Off, remove power,
-and reconnect the panels during assembly. Use the LED-connected rows in
+For a paired board, exercise the controls in Home while inspecting USB `status`,
+`registers`, and `verify`. Leave each setting still until intended and
+acknowledged states agree; separate console requests can straddle a transition.
+Do not replace the Home commands with USB commands for this acceptance check.
+
+1. Select Home 100% and the warmest temperature. Expect level 254; near the warm
+   endpoint the warm/cool PWM bytes are `22/0`. Measure DC volts across the two
+   pins of each of `F-1`, `F-2`, `W-1`, and `W-2`.
+2. Keep 100% and select the coolest temperature. Near that endpoint expect
+   `0/22`; repeat the same connector measurements. Record the actual mired
+   value: Home's slider may stop slightly inside the advertised limits.
+3. At a fixed temperature, select 50% and then the lowest nonzero Home brightness.
+   Verify the decreasing PWM values against the reported level and temperature.
+   Home 100% is the nominal stock 10% ceiling; unloaded DC voltage need not
+   decrease with brightness.
+4. Turn Off in Home. Verify acknowledged Off and all PWM bytes zero, then confirm
+   the four connector voltages return near zero. The blue/OE to black/GND check
+   is separate from measuring across an LED connector.
+
+The PCA's individual dimming signal is nominally 97 kHz
+([NXP datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf), section
+7.3.3). These registers select individual PWM; they do not prove the downstream
+driver waveform. An unloaded output may charge near the supply even at low duty.
+Temperature extremes can help distinguish output banks, but voltage alone does
+not establish emitted warm/cool colour, LED current, or optical brightness.
+
+After the disconnected-LED checks support reassembly, request and verify Off,
+turn off and disconnect the bench supply, unplug USB, and reconnect the panels
+during assembly. Use the LED-connected rows in
 [the validation record](validation-record.md) to observe Off, brightness and
 temperature, the Home 100%/stock 10% ceiling, startup/reset behavior, and recovery.
 Keep first connected-output tests distinct from the preceding readback results.

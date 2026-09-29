@@ -64,9 +64,12 @@ an optional connection or permanently grounded substitute.
 ## Reported electrical measurements
 
 The four two-pin LED connectors are labelled `F-1`, `F-2`, `W-1`, and `W-2`
-(Michael, 2026-09-28). Keep their labels when recording unloaded measurements;
-the letters alone do not establish warm/cool channel assignments. See the
-[validation record](validation-record.md) for Off/On probe results.
+(Michael, 2026-09-28). Powered, unloaded Home tests associate both F connectors
+with PCA LED0, the firmware's warm channel, and both W connectors with LED4,
+the firmware's cool channel. At maximum allowed brightness, the selected bank
+measured approximately 13 V and the other near zero; changing temperature
+extremes swapped them. The actual panel colours remain unobserved. See the
+[validation record](validation-record.md) for the measured states and limits.
 
 These historical measurements were supplied in the 2026-09-28 handoff and were
 not performed by the implementation agent. They do not validate the old signal
