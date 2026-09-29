@@ -75,6 +75,11 @@ is being substantially driven On.
 
 ### Selected first trial: the two warm outputs
 
+The [one-page field guide](field-guides/off-glow/key-right-resistor-trial.pdf)
+circles both connectors and enlarges their electrical contacts, with a short
+firmware 0.1.4 reminder. Its [source record](field-guides/off-glow/README.md)
+retains the photo reference and distinguishes contacts from underside pads.
+
 Use **two 10 kΩ, 0.25 W or higher axial through-hole resistors**, one across
 each F connector. Ordinary carbon-film or metal-film parts from a standard-value
 assortment are suitable; 1% or 5% tolerance is sufficient. These are the small

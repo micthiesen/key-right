@@ -1,0 +1,17 @@
+{
+  "created_date": "2026-09-29",
+  "source_revision": "5fdaf9d514de31273bc69084dbeaa24eccb1f7ae",
+  "photo": {
+    "path": "../../references/photos/keylight-3622.png",
+    "sha256": "878cd790904eadab99fd57c72c381f88e02b5f60b8f3a9d12e10eeaa73dcb495",
+    "annotations": "Vector circles identify connector housings and electrical metal contacts on the component side. Underside pads are not photographed."
+  },
+  "generated_asset": {
+    "path": "assets/axial-resistor.png",
+    "sha256": "def9a558bb6c549f41f8140c865ca818dcb6540c5719c920032477eb1b902833",
+    "tool": "image_gen.imagegen",
+    "purpose": "Axial component shape only; bands do not encode the selected resistance.",
+    "prompt": "Use case: scientific-educational. Asset type: small component-identification insert in a black-and-white printed electronics field guide. Draw one loose traditional axial through-hole resistor, the small rounded cylindrical peanut-shaped body with exactly one long straight wire lead emerging from each end. Horizontal, centered, side view, approximately 3:1 wide composition. Black ink technical illustration with clean bold outlines and very light gray shading on pure white. Body and wires fill most of the image with comfortable white margins. Four plain circumferential bands on the body are okay as generic identification, but do not encode a claimed value by color. No words, numbers, units, labels, arrows, connectors, circuit board, circuit symbols, hands, or background objects. This illustration only identifies the component shape; exact resistor value and verified PCB locations will be typeset separately.",
+    "correction_prompts": []
+  }
+}
