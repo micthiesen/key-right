@@ -27,8 +27,9 @@ the initial implementation: endpoint deduplication discarded replacement Move
 rates, and SlowFade could round a sub-minimum frame upward. Both were corrected.
 The original isolated repros and committed regressions pass; focused re-review
 found no further issue. Hardware-evidence review checked the separate
-[glow investigation](off-glow-investigation.md); its source diagnosis and
-electrical fallback remain conditional.
+[glow investigation](off-glow-investigation.md). Michael later confirmed panel
+emission and ruled out the ESP indicator; the document now reflects that
+correction. Its electrical diagnosis and resistor candidate remain conditional.
 
 An initial ad hoc application check from the repository root selected the host
 architecture and failed in `portable-atomic`. The required gate runs from the
@@ -241,8 +242,9 @@ temperature commands reached the real driver. An idle spinner cleared after
 restarting Home; Michael confirmed Off held, and zero PWM verified. The second
 board was saved Off before assembly; the first board's network/watchdog fault
 tests were not repeated on it. Michael subsequently reported that both assembled
-lamps work well, with faint central orange glow while Off and powered. Its
-source remains unresolved; register-zero Off is not proof of optical darkness.
+lamps work well, with faint orange panel emission while Off and powered,
+including at the centre and edges. He rules out the ESP indicator. The
+electrical cause remains unresolved; register-zero Off is not proof of darkness.
 
 These live results are separate from the build/test gates above. The
 [validation record](validation-record.md) retains their measurements, exact

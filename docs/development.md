@@ -225,9 +225,9 @@ version 5), retain each board's NVS and existing Home membership, and follow the
 VBUS-blocked USB rule. No new commissioning or routine probing is needed.
 After update, verify On/Off, brightness and temperature fades visually, interrupt
 a fade with another setting, and check that Home holds its chosen targets.
-Check saved Off after a restart before closing up. Use the
-[indicator masking comparison](off-glow-investigation.md) during the same
-opening; the firmware update is not a demonstrated glow fix.
+Check saved Off after a restart before closing up. The confirmed panel glow has
+a separate [electrical investigation plan](off-glow-investigation.md); the
+firmware update is not a demonstrated glow fix. The ESP indicator is ruled out.
 
 After flashing under the power rule above, inspect USB `status` and `verify`
 before changing output, so saved-state restoration remains observable. Issue

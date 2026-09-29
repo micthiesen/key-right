@@ -171,10 +171,10 @@ startup/reset behavior, and network recovery separately. A register
 acknowledgement/readback is not a measurement of emitted light.
 
 Both assembled lamps now operate well per Michael, but have a faint central
-orange glow while Off and powered. The ESP's red indicator is the leading
-source to distinguish from panel leakage at the next planned opening. See the
-[glow investigation](off-glow-investigation.md) for the insulating-cover test,
-verified connector locations and limits on electrical alternatives. No PCA
+orange glow while Off and powered. Michael confirms that the panel itself
+emits it, including at the edges, and rules out the ESP indicator. See the
+[glow investigation](off-glow-investigation.md) for the leakage/residual-drive
+assessment, verified connector locations and conditional bleeder trial. No PCA
 polarity change, OE pull-down or unverified gate connection is selected.
 
 ## Evidence provenance

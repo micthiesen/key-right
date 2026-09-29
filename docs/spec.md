@@ -24,7 +24,9 @@ passed. The second board runs the same installed image and has passed real PCA
 checks, saved-Off reboot, Home commissioning and the final Home control/Off check. Its
 idle spinner cleared after restarting Home. Michael now reports that both
 assembled lamps work well, with a faint orange glow near the centre while Off
-and powered. Optical darkness is therefore unresolved; see the
+and powered. He confirms that the LED panel itself emits it, including at the
+edges, and rules out the ESP indicator. The electrical cause and optical
+darkness are unresolved; see the
 [Off-glow investigation](off-glow-investigation.md). Loaded startup, detailed
 optical behavior and two-lamp grouping remain unverified.
 The [physical validation record](validation-record.md) owns per-image results,

@@ -45,9 +45,11 @@ The second board has passed real PCA checks, saved-Off reboot, Home
 commissioning with its own fabrics and credentials, and the final control/Off
 check after a Home app restart cleared an idle spinner. Both assembled lamps
 now work well per Michael, running 0.1.3, but have a faint central orange glow
-when Off and powered. `docs/off-glow-investigation.md` owns the next-opening
-visual indicator-mask test and conditional electrical alternatives. No source
-is confirmed; do not invent an indicator GPIO, transistor pad or OE pull-down.
+when Off and powered. Michael confirms emission from the actual LED panel,
+including the centre and edges, and rules out the ESP indicator. Do not repeat
+the withdrawn masking test. `docs/off-glow-investigation.md` owns the leakage/
+residual-drive investigation and conditional connector-bleeder trial. The
+electrical cause is unconfirmed; do not invent transistor pads or an OE pull-down.
 0.1.4 is prepared, not flashed. Detailed loaded startup remains unverified;
 do not turn that limit into requests to repeat completed probing.
 Both installed boards report 4 MiB flash; no PSRAM is required. Detect each device's

@@ -18,8 +18,9 @@ are limited by eight-bit PWM quantization.
 
 Both assembled lamps run **0.1.3** and Michael reports they work well. Bench
 probing is complete. A faint orange glow near the centre while Off is under
-[investigation](docs/off-glow-investigation.md); the ESP indicator is the first
-source to check. Register-zero Off does not establish optical darkness.
+[investigation](docs/off-glow-investigation.md). Michael confirms that the panel
+LEDs emit it and rules out the ESP indicator. The electrical cause remains
+unresolved; register-zero Off does not establish optical darkness.
 
 **0.1.4 is prepared for the next planned reflash, not installed.** It adds
 400 ms eased power, brightness and temperature transitions while Home continues
