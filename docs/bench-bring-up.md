@@ -145,6 +145,11 @@ Check the following separately and record the method as well as the result:
 | OE | GPIO6 open-drain; released HIGH for Off and pulled LOW only after a verified On frame |
 | Firmware health | Record reset reason, uptime, brownout/reset loops, output faults, and storage faults |
 
+Use the confirmed harness colours during probing: black GND, red power, yellow
+SDA, green SCL, blue OE. Measure OE with meter COM on black/GND and the voltage
+probe on blue/OE. Expect near the rail while Off and near 0 V while On; record
+actual readings separately from firmware acknowledgements.
+
 With the panels still disconnected, exercise real register changes and return
 to Off:
 

@@ -43,13 +43,17 @@ Orient the Key Light board with the **white power resistors to the left** and th
 row. Number its pads from **1 at the left**; these positions are not PCA chip
 pin numbers or the removed module's datasheet pin numbers.
 
-| Signal | Key Light connection | C3 board pad | Function |
-| --- | --- | --- | --- |
-| Power | J6 / DEBUG, top-left pad; reported 3.37 V | `3.3` | Direct regulated supply, not a GPIO |
-| Ground | J8 / UART, top pad of the left of its two three-pad columns | `G` | Common ground |
-| SDA | U4 top row, **second from right**; PCA9635 pin 27 | `4` | GPIO4, I²C SDA |
-| SCL | U4 top row, **rightmost**; PCA9635 pin 26 | `5` | GPIO5, I²C SCL |
-| OE | U4 top row, **pad 5 from the left, counting from 1**; PCA9635 pin 23 | `6` | GPIO6, active-low output enable |
+| Signal | Wire colour | Key Light connection | C3 board pad | Function |
+| --- | --- | --- | --- | --- |
+| Power | Red | J6 / DEBUG, top-left pad; reported 3.37 V | `3.3` | Direct regulated supply, not a GPIO |
+| Ground | Black | J8 / UART, top pad of the left of its two three-pad columns | `G` | Common ground |
+| SDA | Yellow | U4 top row, **second from right**; PCA9635 pin 27 | `4` | GPIO4, I²C SDA |
+| SCL | Green | U4 top row, **rightmost**; PCA9635 pin 26 | `5` | GPIO5, I²C SCL |
+| OE | Blue | U4 top row, **pad 5 from the left, counting from 1**; PCA9635 pin 23 | `6` | GPIO6, active-low output enable |
+
+Michael confirmed these wire colours on 2026-09-28. Use colour plus signal in
+bench instructions: for OE voltage, meter COM goes to black/GND and the voltage
+probe to blue/OE. These are harness wire colours, not meter-lead colours.
 
 The corrected U4 map matches the existing firmware assignments, so no GPIO
 change is required. Leave the correct ESP ends in place. Use printed labels

@@ -18,6 +18,8 @@ product goals.
 
 The installed board is marked ESP32-C3_MINI_V1, not an official MINI-1U module.
 Current firmware assigns GPIO4 to SDA, GPIO5 to SCL, and GPIO6 to active-low PCA OE.
+Confirmed harness colours: black GND, red power, yellow SDA, green SCL, blue OE.
+Use wire colour plus signal in probing instructions.
 On 2026-09-28 Michael corrected the field guide's U4 pad map: top-row OE is
 pad 5 counting from 1 at the left, SCL is rightmost, and SDA is second from
 right. The ESP end is correct and remains GPIO4/5/6 for SDA/SCL/OE. Keep power
@@ -32,7 +34,8 @@ Stock U3 is the PCA9635 at address `0x15`, 100 kHz; stock active channels are
 LED0/warm and LED4/cool. `docs/hardware.md` records historical 3.37 V bus/rail
 readings with approximately 9.9 kΩ pull-ups. The corrected pad map is user
 reported; powered PCA readback subsequently passed on the first rewired board.
-This does not establish OE voltage, physical LED output, or the second board.
+Michael subsequently measured OE at 3.34 V while Off. On OE voltage, physical
+LED output, and the second board remain unverified.
 The first board reports 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 
