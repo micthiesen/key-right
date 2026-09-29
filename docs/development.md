@@ -4,9 +4,11 @@
 
 Key Right contains a portable `no_std` control/PCA9635 core, an in-memory host
 simulator, and a separate ESP32-C3 Matter workspace for the installed
-**ESP32-C3_MINI_V1**. Wiring is complete, with the LEDs disconnected; powered
-bench tests and flashing are pending. See [hardware.md](hardware.md) for the
-measured connections.
+**ESP32-C3_MINI_V1**. The wired assembly has powered up and received the real
+firmware, with the LEDs disconnected. USB diagnostics work; bench diagnosis of
+the PCA acknowledgement failure continues. See [hardware.md](hardware.md) for
+the measured connections and [the validation record](validation-record.md) for
+results.
 
 The board configuration is:
 
@@ -88,7 +90,9 @@ The C3 port retains those revisions and adds direct `portable-atomic` and
 `esp-metadata-generated` dependencies. Both images keep a 100 KiB heap split
 across ordinary DRAM and the SDK's reclaimed bootloader RAM, following its
 persistent Wi-Fi example. This avoids consuming almost all of the C3's linked
-stack region. Linked memory sizes are recorded in
+stack region. Matter's separate static transport arena is 32 KiB; the initial
+20,000-byte example allocation panicked during the first real C3 startup.
+Linked memory sizes are recorded in
 [software validation](software-validation.md); live high-water usage still
 requires bench testing.
 

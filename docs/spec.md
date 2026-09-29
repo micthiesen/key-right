@@ -10,10 +10,12 @@ and automatic recovery without cloud services or Homebridge. Each physical lamp
 is one normal light in Home, with power, brightness, and white-temperature
 controls. Two lamps remain separate Matter nodes and can be grouped in Home.
 
-On **2026-09-28**, Michael reported that the boards are wired together. The LEDs
-are still disconnected; the assembly is ready for bench-PSU bring-up and flashing
-preparation. This records completed wiring, not a successful powered bench test,
-firmware flash, PCA transaction, or light-output test.
+On **2026-09-28**, Michael completed the wiring and powered the assembly from a
+13 V bench supply with the LEDs disconnected. He measured 3.345 V at the ESP.
+USB confirmed an ESP32-C3 with 4 MiB flash, and the real firmware was flashed
+after backing up the original image. Bench testing remains in progress; the
+[physical validation record](validation-record.md) owns individual results and
+pending acceptance checks.
 
 The firmware target is `esp32c3`, using `riscv32imc-unknown-none-elf`. Software
 validation and physical acceptance are separate; passing build gates does not

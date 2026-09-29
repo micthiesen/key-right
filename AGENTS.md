@@ -24,7 +24,8 @@ Stock U3 is the PCA9635 at address `0x15`, 100 kHz; stock active channels are
 LED0/warm and LED4/cool. `docs/hardware.md` owns the user-measured five-wire pad
 map and 3.37 V bus/rail readings with approximately 9.9 kΩ pull-ups. These settle
 the connection points, not physical output or power stability under radio load.
-Plan for 4 MiB flash/no PSRAM, but detect capacity before flashing.
+The first board reports 4 MiB flash; no PSRAM is required. Detect each device's
+capacity before flashing.
 
 The C3 takes power directly from J6's measured 3.37 V rail at its `3.3` pad.
 No buck, C3 `5V` connection, extra pull-ups, translator, lifted PCA pins, or output
@@ -32,8 +33,10 @@ interlock is part of the design. The rocker is already bypassed ON. With lamp
 wiring attached, use lamp/bench power and USB with VBUS blocked, data and ground
 intact. Ordinary powered USB requires disconnecting all five lamp wires first;
 unplugging the lamp adapter alone is insufficient.
-On 2026-09-28 the user reported wiring complete, LEDs disconnected, ready for bench
-PSU bring-up. Flashing, powered bench operation, and LED-output tests remain pending.
+On 2026-09-28 the wired assembly powered from the 13 V bench supply, the user
+measured 3.345 V at the ESP, USB identified the C3, and the real firmware flashed
+after an original-flash backup. LEDs remain disconnected. Consult
+`docs/validation-record.md` for bench results and remaining acceptance checks.
 Do not claim off during cold start, reset, or brownout until the actual light is
 observed; there is no independent output cutoff.
 
@@ -74,6 +77,9 @@ builds explicit real and simulated C3 images for `riscv32imc-unknown-none-elf`.
 Keep the C3 heap split across ordinary and reclaimed bootloader RAM. The MCU
 gate and flash helper reject linked main-stack reservations below 16 KiB;
 passing that gate does not measure runtime stack or heap use.
+Keep the separate Matter transport arena at 32 KiB; 20,000 bytes panicked on
+the first real C3 boot. LEDs cannot be reconnected until lamp reassembly;
+unloaded measurements at the four two-pin LED connectors do not prove output.
 Host tests cannot establish wiring, PCA bus levels, startup behavior, radio
 performance in the closed housing, or physical output. Keep bench simulation
 separate from real I/O and record physical results in `docs/validation-record.md`.

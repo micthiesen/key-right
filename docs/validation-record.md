@@ -36,10 +36,10 @@ assembly was ready for bench-PSU testing and flashing. **The LED panels are not
 connected.** The completed five-wire map is documented in
 [hardware.md](hardware.md): J6/DEBUG 3.37 V to `3.3`, J8/UART ground to `G`,
 U4 SDA to GPIO4, U4 SCL to GPIO5, and U4 OE to GPIO6. The installed design has no
-buck converter or added pull-ups. No successful power-up, flash, USB session,
-I²C exchange, or optical test of the completed assembly has been reported.
+buck converter or added pull-ups. At that point, powered operation, flashing,
+USB, I²C, and optical tests of the completed assembly were still pending.
 
-## Bench session pending, LEDs disconnected
+## Bench session in progress, 2026-09-28, LEDs disconnected
 
 Follow [bench bring-up](bench-bring-up.md) and record the software gate results
 before flashing the C3. With lamp wires attached, USB must block
@@ -53,24 +53,29 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 
 | Check or session detail | Result |
 | --- | --- |
-| Date, operator, stock-board revision | Pending |
-| C3 chip identity and detected flash ID/capacity | Pending; plan assumes 4 MiB and no PSRAM |
-| C3 firmware commit, build target, image/partition fit | Pending |
-| Read-only serial inspection and flash-helper preflight | Pending |
-| Bench-PSU connection/polarity, voltage setting, current limit | Pending; reported original input is 13 V |
-| Power/USB isolation arrangement used | Pending |
-| First power-up, current draw, 3.3 V rail under load | Pending |
-| Flashing, native USB console, boot/reset reasons | Pending |
-| GPIO4/5 assignment and 100 kHz bus operation | Pending |
+| Date, operator, stock-board revision | 2026-09-28; Michael operating the bench, agent inspecting macOS/serial; stock-board revision not supplied |
+| C3 chip identity and detected flash ID/capacity | ESP32-C3 revision v0.4, 40 MHz crystal, 4 MiB flash detected by espflash; raw flash ID was not printed |
+| C3 firmware commit, build target, image/partition fit | Current real `hardware-light` image is `ec1cff9`, `riscv32imc-unknown-none-elf`; 1,914,272 / 4,063,232 app-partition bytes, linked stack 57,912 bytes; both software gates and both image-fit checks passed. Initially flashed `fb241df` before the arena fix |
+| Read-only serial inspection and flash-helper preflight | Passed `sh scripts/flash.sh --info /dev/cu.usbmodem1101`; no flash write. macOS identified Espressif USB VID `0x303a`, PID `0x1001`, 12 Mb/s. Holding BOOT, tapping RESET, then releasing BOOT exposed USB and produced the accessory prompt |
+| Bench-PSU connection/polarity, voltage setting, current limit | User reports 13 V supply enabled; current limit/current draw and CV/CC indication not supplied |
+| Power/USB isolation arrangement used | User opened a USB-C cable and disconnected its larger red conductor. With USB alone, no ESP power indication/enumeration was reported. USB data works with bench power. VBUS isolation has not been independently measured |
+| First power-up, current draw, 3.3 V rail under load | User reports ESP LEDs lit, red plus flashing blue, with 13 V bench power; measured 3.345 V between ESP `3.3` and `G` during the powered USB session. Current draw and radio-load measurements pending; this is not a rail-stability pass |
+| Original firmware backup | Full 4,194,304-byte read completed and digest verified by espflash before writing. SHA-256 `9a4b8a001b605d24bac52dfb157656d1f16ef8a06726842cd546046466378daa`; private local copy under `~/Library/Application Support/key-right/backups/2026-09-28-c3-first-flash/`, outside Git |
+| Flashing, native USB console, boot/reset reasons | Initial flash succeeded; first console request timed out. After manual RESET, captured `Out of bump memory` panic and `TG0WDT_SYS_RST` loop. Enlarged Matter's static arena from 20,000 bytes to 32 KiB, reflashed with NVS preserved; USB `status` then succeeded at 9.6, 20.5, 63.8, and 107.974 seconds uptime, reset `CoreUsbUart`. No storage failures reported |
+| GPIO4/5 assignment and 100 kHz bus operation | Configured in real firmware; PCA bus reports `AcknowledgeCheckFailed(Unknown)`. Electrical checks pending; timing not measured |
 | GPIO6 open-drain release HIGH before output enable; LOW enables configured outputs | Pending |
-| PCA individual address `0x15`, setup writes and critical-register readback | Pending; address/configuration are stock-firmware evidence |
+| PCA individual address `0x15`, setup writes and critical-register readback | Failed: `off` and `registers` returned `KR ERR Failure`; `verify` returned `KR ERR InvalidState`. Logs identify I²C acknowledgement failure. Status retains intended Off, level 57, 303 mired, `acknowledged=None`, `fault=Output`; no successful register readback |
 | BLE/Wi-Fi activity, loaded rail, brownout/reset behavior | Pending |
 
 ## LED-connected acceptance pending
 
-Reconnect the LED panels with power removed only after the preceding bench work
-supports proceeding. Record the firmware commit and actual observations for
-each check. Tests with disconnected LEDs cannot fill these rows.
+Michael reports the LED panels cannot be connected until the lamp is put back
+together. Keep them disconnected for bench work; the four two-pin LED connectors
+are available for probing. Record unloaded connector measurements separately
+from physical light results. Reconnect during reassembly with power removed,
+only after the preceding bench work supports proceeding. Record the firmware
+commit and actual observations for each check. Tests with disconnected LEDs
+cannot fill these rows.
 
 | Check | Observation |
 | --- | --- |

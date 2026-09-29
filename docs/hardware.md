@@ -14,10 +14,11 @@ USB-C, the buttons, the onboard antenna component, and the antenna socket; it
 does not establish the RF routing, an antenna-switch GPIO, or electrical wiring.
 The firmware uses the C3's native USB Serial/JTAG peripheral.
 
-On **2026-09-28**, Michael reported that the board wiring was complete. The LED
-panels are **not connected**. The assembly is ready for bench-PSU testing and
-firmware work, but no first-power, flashing, I²C, or light-output result for the
-completed assembly has been reported. See [the validation record](validation-record.md).
+On **2026-09-28**, Michael completed the wiring and powered the assembly from a
+13 V bench supply, measuring 3.345 V at ESP `3.3`/`G`. USB identified an ESP32-C3
+revision v0.4 with 4 MiB flash. The original image was backed up and real
+firmware flashed. The LED panels remain **disconnected**; bench results and
+outstanding checks are in [the validation record](validation-record.md).
 
 Retain the PCA9635 U3, stock LED power/current-limiting circuitry, LED panels,
 housing, and original 13 V / 4 A supply. No PCA pin is lifted. The rocker has
@@ -83,8 +84,9 @@ open-drain output mode. Releasing HIGH lets the existing OE pull-up act; pulling
 LOW enables the PCA's configured outputs. The electrical meaning of OE HIGH
 depends on MODE2 and does not by itself prove that the lamp is dark.
 
-Plan for **4 MiB flash and no PSRAM**. Read chip identity and flash ID/capacity
-from the connected board before flashing; the actual capacity remains unverified.
+The first device reported **4 MiB flash**; the firmware requires no PSRAM.
+Read chip identity and flash ID/capacity from each connected board before
+flashing; do not assume every board sold under this marking has the same flash.
 The Rust MCU application targets `esp32c3`. The flash helper must reject a wrong
 chip or insufficient capacity before writing. [Development](development.md)
 owns build instructions; [bench bring-up](bench-bring-up.md) owns initial flashing

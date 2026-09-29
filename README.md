@@ -16,10 +16,12 @@ scenes. Grouping does not guarantee simultaneous output. Stock firmware evidence
 defines PCA commands, not measured brightness or Kelvin, and low-output steps
 are limited by eight-bit PWM quantization.
 
-**Wiring is complete as reported on 2026-09-28; the LEDs remain disconnected.**
-The assembly is ready for bench-PSU bring-up and flashing preparation. Powered
-bench operation, flashing, physical output, startup, closed-housing radio
-performance, and Apple Home operation remain unverified.
+**Bench bring-up is in progress; the LEDs remain disconnected.** On 2026-09-28,
+the wired assembly powered from the 13 V bench supply, Michael measured 3.345 V
+at the ESP, and USB identified an ESP32-C3 with 4 MiB flash. The original flash
+was backed up and the real firmware flashed successfully. See the
+[physical validation record](docs/validation-record.md) for console/PCA results
+and pending physical-output, startup, radio, and Apple Home checks.
 
 The Rust application targets `esp32c3`. The [spec](docs/spec.md) records the
 single-light control contract. Build results and pending checks are recorded in

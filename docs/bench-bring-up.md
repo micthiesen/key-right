@@ -1,10 +1,11 @@
 # C3 bench bring-up
 
 This sequence is for the wired **ESP32-C3_MINI_V1** and retained stock PCA9635,
-with the **LED panels disconnected**. Wiring was reported complete on
-2026-09-28; no powered result, flash, USB session, or PCA exchange for this
-assembly has been reported. Record each actual result in
-[the validation record](validation-record.md).
+with the **LED panels disconnected** until the lamp is reassembled. The first
+powered USB identification, original-flash backup, and real firmware flash
+completed on 2026-09-28.
+Record each actual result and remaining check in
+[the validation record](validation-record.md); this guide is the procedure.
 
 Use the [five-wire map and measurements](hardware.md) as the connection source.
 The [component-side C3 photo](references/photos/esp32-c3-mini-v1.png) identifies
@@ -66,7 +67,7 @@ smaller device.
 
 If automatic ROM entry fails, hold BOOT, press and release RESET, then release
 BOOT. Re-list ports if USB re-enumerates and retry the read-only identity query.
-This recovery sequence still needs verification on this board. Keep the same
+This sequence exposed USB successfully on the first board. Keep the same
 lamp-power and VBUS-blocked USB arrangement throughout.
 
 ## 3. Preflight and flash
@@ -165,8 +166,14 @@ reopen it. Pair each lamp separately. Apple Home should show one light with
 power, brightness, and temperature controls; group the two accessories in Home
 to control them together. Grouping has no frame-perfect timing guarantee.
 
-After the disconnected-LED checks support proceeding, remove power before
-reconnecting the panels. Use the LED-connected rows in
+Michael cannot reconnect the panels until reassembly. Use the four two-pin LED
+connectors as accessible probe points during disconnected bench work, recording
+the connector, reference point, instrument, requested state, and measured value.
+Do not interpret an unloaded connector voltage as LED current or brightness;
+PWM timing needs an oscilloscope or logic measurement at an appropriate node.
+
+After the disconnected-LED checks support reassembly, request Off, remove power,
+and reconnect the panels during assembly. Use the LED-connected rows in
 [the validation record](validation-record.md) to observe Off, brightness and
 temperature, the Home 100%/stock 10% ceiling, startup/reset behavior, and recovery.
 Keep first connected-output tests distinct from the preceding readback results.
