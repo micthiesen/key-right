@@ -77,7 +77,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | Flashing, native USB console, boot/reset reasons | Initial flash succeeded; first console request timed out. After manual RESET, captured `Out of bump memory` panic and `TG0WDT_SYS_RST` loop. Enlarged Matter's static arena from 20,000 bytes to 32 KiB, reflashed with NVS preserved; USB `status` then succeeded at 9.6, 20.5, 63.8, and 107.974 seconds uptime, reset `CoreUsbUart`. No storage failures reported |
 | GPIO4/5 assignment and 100 kHz bus operation | Configured in real firmware; before rework, PCA bus reported `AcknowledgeCheckFailed(Unknown)`. Michael confirms corrected signal-pin continuity. Post-rework register writes/readback and `verify` pass; actual bus timing remains unmeasured |
 | Powered bus DC levels at the ESP | Before rework, Michael reported GPIO4 3.4 V and GPIO5 3.34 V relative to ESP G. Neither appeared held low. The HAL enables internal pull-ups, so these readings did not establish end-to-end continuity or I²C timing. Michael subsequently confirmed corrected signal-pin continuity during rework |
-| GPIO6 open-drain release HIGH before output enable; LOW enables configured outputs | Off measurement: Michael reports 3.34 V between GPIO6/OE and ESP G after verified Off. This confirms the steady Off HIGH level; On LOW and startup transitions remain unmeasured |
+| GPIO6 open-drain release HIGH before output enable; LOW enables configured outputs | Steady levels passed: Michael measured blue/OE to black/GND at 3.34 V after verified Off and 0.01 V after acknowledged On with register verification. Returned to verified Off afterward. Startup/reset transitions remain unmeasured |
 | PCA individual address `0x15`, setup writes and critical-register readback | Passed after corrected U4 wiring: Off and ten On frames read back and verified, including full MODE/PWM/group/LEDOUT registers. Before rework these commands failed with an I²C acknowledgement error. See the post-rework results below |
 | BLE/Wi-Fi activity, loaded rail, brownout/reset behavior | Pending |
 
@@ -111,16 +111,19 @@ Wi-Fi was not connected. Local response capture is
 `/tmp/key-right-post-rewire-readback.log`; no pairing code was requested.
 
 This proves powered register communication and commanded frames on the first
-board. Michael subsequently measured OE at 3.34 V relative to ESP G while Off,
-confirming the expected steady HIGH level. On OE voltage, startup transitions,
-unloaded LED-connector behavior, light output, and radio operation remain
-separate checks.
+board. Michael subsequently measured blue/OE relative to black/GND at 3.34 V
+Off and 0.01 V On, confirming expected steady HIGH/LOW levels. Startup
+transitions, unloaded LED-connector behavior, light output, and radio operation
+remain separate checks.
 
 Michael confirmed the harness colours: black GND, red power, yellow SDA, green
-SCL, blue OE. Before the planned On OE measurement, a fresh USB `status` request
-timed out. The script stopped before sending `on`; Off remains the last verified
-state. Restore responsive USB before switching state for the blue-to-black
-measurement.
+SCL, blue OE. A USB `status` request initially timed out before the On OE
+measurement; no On command was sent in that failed attempt. At Michael's next
+request, USB responded and On was acknowledged/verified at uptime 589,497 ms.
+After his 0.01 V reading, Off and register verification passed at uptime
+648,953 ms, with acknowledged Off, level 57, 303 mired, no fault, and zero output
+or storage failures. One unloaded LED-connector Off voltage measurement is now
+requested, to be followed by an On comparison at the same probe positions.
 
 ## LED-connected acceptance pending
 

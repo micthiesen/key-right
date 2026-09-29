@@ -34,8 +34,9 @@ Stock U3 is the PCA9635 at address `0x15`, 100 kHz; stock active channels are
 LED0/warm and LED4/cool. `docs/hardware.md` records historical 3.37 V bus/rail
 readings with approximately 9.9 kΩ pull-ups. The corrected pad map is user
 reported; powered PCA readback subsequently passed on the first rewired board.
-Michael subsequently measured OE at 3.34 V while Off. On OE voltage, physical
-LED output, and the second board remain unverified.
+Michael measured blue/OE to black/GND at 3.34 V Off and 0.01 V On. These steady
+levels pass; startup transitions, physical LED output, and the second board
+remain unverified.
 The first board reports 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 
