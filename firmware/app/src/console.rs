@@ -123,6 +123,8 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
                 H::MODE,env!("CARGO_PKG_VERSION"),esp_hal::efuse::base_mac_address(),embassy_time::Instant::now().as_millis(),esp_hal::system::reset_reason(),
                 s.intended.on,s.intended.level.get(),s.intended.temperature.get(),s.applied,s.fault,s.output_failures,s.storage_failures,s.recoveries,
                 connected,rssi,local_ready,ipv4_ready,attempts,timeouts,ip_timeouts,restarts,crate::output::dropped());
+            let _ = write!(out, " acknowledged_stock_percent_numerator={:?} stock_percent_denominator=253 level_remaining_ms={} temperature_remaining_ms={}",
+                s.applied_frame.map(|frame| frame.brightness.get()), runtime.level_remaining_ms(), runtime.temperature_remaining_ms());
             return;
         }
         ("off", [None, None, None]) => runtime.off(),

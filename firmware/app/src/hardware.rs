@@ -5,7 +5,7 @@ use esp_hal::gpio::Output;
 use esp_hal::i2c::master::{Error as I2cError, I2c};
 use esp_hal::Blocking;
 use key_right_core::pca9635::{Delay, DriverError, OutputEnable, Pca9635, RegisterBus};
-use key_right_core::{LightOutput, LightState};
+use key_right_core::{LightOutput, OutputFrame};
 
 struct Bus(I2c<'static, Blocking>);
 impl RegisterBus for Bus {
@@ -47,16 +47,16 @@ impl PhysicalOutput {
 }
 impl LightOutput for PhysicalOutput {
     type Error = OutputError;
-    fn apply(&mut self, state: LightState) -> Result<(), OutputError> {
-        self.0.apply(state).map_err(Self::error)
+    fn apply_frame(&mut self, frame: OutputFrame) -> Result<(), OutputError> {
+        self.0.apply_frame(frame).map_err(Self::error)
     }
 }
 impl Hardware for PhysicalOutput {
     fn shutdown(&mut self) -> Result<(), OutputError> {
         self.0.shutdown().map_err(Self::error)
     }
-    fn verify(&mut self, state: LightState) -> Result<(), OutputError> {
-        self.0.verify(state).map_err(Self::error)
+    fn verify_frame(&mut self, frame: OutputFrame) -> Result<(), OutputError> {
+        self.0.verify_frame(frame).map_err(Self::error)
     }
     fn registers(&mut self) -> Result<[u8; 24], OutputError> {
         self.0.read_registers().map_err(Self::error)

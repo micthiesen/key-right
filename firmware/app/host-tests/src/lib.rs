@@ -20,6 +20,8 @@ pub mod recovery;
 pub mod runtime;
 
 #[cfg(test)]
+mod animation_tests;
+#[cfg(test)]
 mod boot_tests;
 #[cfg(test)]
 mod commissioning_ble_tests;

@@ -16,16 +16,17 @@ scenes. Grouping does not guarantee simultaneous output. Stock firmware evidence
 defines PCA commands, not measured brightness or Kelvin, and low-output steps
 are limited by eight-bit PWM quantization.
 
-**Bench testing continues with the LEDs disconnected.** Michael
-supplied the corrected Key Light pad map in [hardware.md](docs/hardware.md) and
-confirmed the ESP ends are correct. The [validation record](docs/validation-record.md)
-tracks each board's rework and test results.
-On 2026-09-28, the wired assembly powered from the 13 V bench supply,
-Michael measured 3.345 V
-at the ESP, and USB identified an ESP32-C3 with 4 MiB flash. The original flash
-was backed up and the real firmware flashed successfully. See the
-[physical validation record](docs/validation-record.md) for console/PCA results
-and pending physical-output, startup, radio, and Apple Home checks.
+Both assembled lamps run **0.1.3** and Michael reports they work well. Bench
+probing is complete. A faint orange glow near the centre while Off is under
+[investigation](docs/off-glow-investigation.md); the ESP indicator is the first
+source to check. Register-zero Off does not establish optical darkness.
+
+**0.1.4 is prepared for the next planned reflash, not installed.** It adds
+400 ms eased power, brightness and temperature transitions while Home continues
+to report selected targets immediately. Physical fades reach zero; intermediate
+frames never write flash. Low-output steps remain limited by the PCA's 8-bit
+resolution. The [validation record](docs/validation-record.md) distinguishes
+installed-image results from checks still pending on the new image.
 
 The Rust application targets `esp32c3`. The [spec](docs/spec.md) records the
 single-light control contract. Build results and pending checks are recorded in
@@ -37,6 +38,7 @@ single-light control contract. Build results and pending checks are recorded in
 - [Initial bench power, chip inspection, flashing, and probing](docs/bench-bring-up.md)
 - [Development and USB instructions](docs/development.md)
 - [Physical validation record](docs/validation-record.md)
+- [Off-glow diagnosis and next-opening fix plan](docs/off-glow-investigation.md)
 
 The controller uses the retained PCA9635 over I²C. It does not lift PCA output
 legs or add level translators or output interlocks. GPIO4/5/6 provide SDA/SCL/OE;

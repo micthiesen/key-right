@@ -3,7 +3,7 @@
 //! OE is the PCA's existing output-enable input, not an independent isolation
 //! circuit. Its power-on behavior differs from the configured stock mode. A bus
 //! failure can leave the previous PWM state active if the OE path is ineffective.
-use crate::{ColorTemperature, Level, LightOutput, LightState};
+use crate::{ColorTemperature, Level, LightOutput, LightState, OutputBrightness, OutputFrame};
 
 pub const ADDRESS: u8 = 0x15;
 pub const MODE2: u8 = 0x14;
@@ -16,6 +16,11 @@ pub const TEMPERATURES_MIRED: [u16; 2] = [303, 200];
 /// Fractional brightness is this application's linear extension of that formula;
 /// it is not an optical calibration or the stock firmware's fade algorithm.
 pub fn stock_pwm_pair(level: Level, temperature: ColorTemperature) -> [u8; 2] {
+    output_pwm_pair(OutputBrightness::from_level(level), temperature)
+}
+
+/// Stock arithmetic extended down to true zero for physical transition frames.
+pub fn output_pwm_pair(brightness: OutputBrightness, temperature: ColorTemperature) -> [u8; 2] {
     let mired = u32::from(temperature.get());
     let [warm, cool] = match mired {
         143 => [0, 100],
@@ -23,7 +28,8 @@ pub fn stock_pwm_pair(level: Level, temperature: ColorTemperature) -> [u8; 2] {
         244 => [100, 100],
         _ => [100, 344 - mired],
     };
-    let (numerator, denominator) = level.stock_brightness_ratio();
+    let numerator = u32::from(brightness.get());
+    let denominator = u32::from(OutputBrightness::DENOMINATOR);
     [
         stock_pwm(warm, numerator, denominator),
         stock_pwm(cool, numerator, denominator),
@@ -41,11 +47,16 @@ fn stock_pwm(mix: u32, numerator: u32, denominator: u32) -> u8 {
 /// Registers 0x02..=0x17: PWM[16], GRPPWM, GRPFREQ, LEDOUT[4].
 /// All unused channels stay zero; only individual PWM is selected.
 pub fn stock_frame(state: LightState) -> [u8; FRAME_LEN] {
+    output_frame(OutputFrame::from_state(state))
+}
+
+/// Register bytes for the exact physical frame, not its logical approximation.
+pub fn output_frame(output: OutputFrame) -> [u8; FRAME_LEN] {
     let mut frame = [0; FRAME_LEN];
     frame[16] = 255;
     frame[18..].fill(0xaa);
-    if state.on {
-        let [warm, cool] = stock_pwm_pair(state.level, state.temperature);
+    if output.state.on {
+        let [warm, cool] = output_pwm_pair(output.brightness, output.state.temperature);
         frame[0] = warm;
         frame[4] = cool;
     }
@@ -81,7 +92,7 @@ pub struct Pca9635<B, O, D> {
     bus: B,
     oe: O,
     delay: D,
-    verified_on: Option<LightState>,
+    verified_on: Option<OutputFrame>,
 }
 
 impl<B: RegisterBus, O: OutputEnable, D: Delay> Pca9635<B, O, D> {
@@ -109,7 +120,7 @@ impl<B: RegisterBus, O: OutputEnable, D: Delay> Pca9635<B, O, D> {
             self.bus
                 .write(ADDRESS, &[0x01, MODE2])
                 .map_err(DriverError::Bus)?;
-            self.write_frame(LightState::default())?;
+            self.write_frame(OutputFrame::default())?;
             // Wake oscillator; disable all/sub-call responses.
             self.bus
                 .write(ADDRESS, &[0x00, 0x00])
@@ -121,10 +132,10 @@ impl<B: RegisterBus, O: OutputEnable, D: Delay> Pca9635<B, O, D> {
         self.finish(result)
     }
 
-    fn write_frame(&mut self, state: LightState) -> Result<(), DriverError<B::Error, O::Error>> {
+    fn write_frame(&mut self, frame: OutputFrame) -> Result<(), DriverError<B::Error, O::Error>> {
         let mut bytes = [0; FRAME_LEN + 1];
         bytes[0] = 0x82; // Auto-increment from PWM0; MODE2.OCH=0 updates on STOP.
-        bytes[1..].copy_from_slice(&stock_frame(state));
+        bytes[1..].copy_from_slice(&output_frame(frame));
         self.bus.write(ADDRESS, &bytes).map_err(DriverError::Bus)
     }
 
@@ -139,9 +150,17 @@ impl<B: RegisterBus, O: OutputEnable, D: Delay> Pca9635<B, O, D> {
 
     /// Verifies register state, not voltage, emitted light, or OE wiring.
     pub fn verify(&mut self, state: LightState) -> Result<(), DriverError<B::Error, O::Error>> {
+        self.verify_frame(OutputFrame::from_state(state))
+    }
+
+    /// Verifies the exact sub-floor frame without rounding to a Matter level.
+    pub fn verify_frame(
+        &mut self,
+        frame: OutputFrame,
+    ) -> Result<(), DriverError<B::Error, O::Error>> {
         let data = self.read_registers()?;
         // MODE1[7:5] reflects the latest auto-increment control byte.
-        if data[0] & 0x1f != 0 || data[1] != MODE2 || data[2..] != stock_frame(state) {
+        if data[0] & 0x1f != 0 || data[1] != MODE2 || data[2..] != output_frame(frame) {
             self.verified_on = None;
             return Err(DriverError::ReadbackMismatch);
         }
@@ -164,20 +183,20 @@ impl<B: RegisterBus, O: OutputEnable, D: Delay> Pca9635<B, O, D> {
 
 impl<B: RegisterBus, O: OutputEnable, D: Delay> LightOutput for Pca9635<B, O, D> {
     type Error = DriverError<B::Error, O::Error>;
-    fn apply(&mut self, state: LightState) -> Result<(), Self::Error> {
+    fn apply_frame(&mut self, frame: OutputFrame) -> Result<(), Self::Error> {
         let result = (|| {
-            if state.on {
+            if frame.state.on {
                 if let Some(previous) = self.verified_on {
-                    match self.verify(previous) {
+                    match self.verify_frame(previous) {
                         Ok(()) => {
                             // Different logical levels/temperatures can encode the
                             // same low-duty frame. Readback acknowledges those
                             // without an output write or an OE interruption.
-                            if stock_frame(previous) != stock_frame(state) {
-                                self.write_frame(state)?;
-                                self.verify(state)?;
+                            if output_frame(previous) != output_frame(frame) {
+                                self.write_frame(frame)?;
+                                self.verify_frame(frame)?;
                             }
-                            self.verified_on = Some(state);
+                            self.verified_on = Some(frame);
                             return Ok(());
                         }
                         Err(DriverError::ReadbackMismatch) => {
@@ -191,11 +210,11 @@ impl<B: RegisterBus, O: OutputEnable, D: Delay> LightOutput for Pca9635<B, O, D>
             // The PCA rail can reset independently of the ESP. Reapply stock
             // configuration when not verified or after detecting a mismatch.
             self.initialize_off()?;
-            if state.on {
-                self.write_frame(state)?;
-                self.verify(state)?;
+            if frame.state.on {
+                self.write_frame(frame)?;
+                self.verify_frame(frame)?;
                 self.oe.set_disabled(false).map_err(DriverError::Enable)?;
-                self.verified_on = Some(state);
+                self.verified_on = Some(frame);
             }
             Ok(())
         })();

@@ -1,9 +1,10 @@
 use key_right_core::pca9635::{
-    stock_frame, stock_pwm_pair, Delay, DriverError, OutputEnable, Pca9635, RegisterBus, ADDRESS,
-    MODE2, TEMPERATURES_MIRED,
+    output_frame, output_pwm_pair, stock_frame, stock_pwm_pair, Delay, DriverError, OutputEnable,
+    Pca9635, RegisterBus, ADDRESS, MODE2, TEMPERATURES_MIRED,
 };
 use key_right_core::{
-    ColorTemperature, Command, Controller, Level, LightOutput, LightState, Preset,
+    ColorTemperature, Command, Controller, Level, LightOutput, LightState, OutputBrightness,
+    OutputFrame, Preset,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -405,4 +406,149 @@ fn off_and_shutdown_invalidate_fast_path_and_reinitialize() {
         driver.apply(on).unwrap();
         assert_eq!(h.borrow().events[0], Event::Oe(true));
     }
+}
+
+#[test]
+fn physical_transition_brightness_reaches_zero_without_changing_settled_pwm() {
+    for mired in 143..=344 {
+        let temperature = ColorTemperature::new(mired).unwrap();
+        assert_eq!(output_pwm_pair(OutputBrightness::ZERO, temperature), [0, 0]);
+        let mut previous = [0, 0];
+        for value in 0..=2530 {
+            let brightness = OutputBrightness::new(value).unwrap();
+            let pair = output_pwm_pair(brightness, temperature);
+            assert!(pair[0] >= previous[0] && pair[1] >= previous[1]);
+            assert!(pair[0] <= 22 && pair[1] <= 22);
+            previous = pair;
+        }
+        for value in 1..=254 {
+            let level = Level::new(value).unwrap();
+            let state = LightState {
+                on: true,
+                level,
+                temperature,
+            };
+            assert_eq!(
+                output_frame(OutputFrame::from_state(state)),
+                stock_frame(state)
+            );
+        }
+    }
+    let warmest = ColorTemperature::MAX;
+    assert_eq!(
+        output_pwm_pair(OutputBrightness::new(100).unwrap(), warmest),
+        [0, 0]
+    );
+    assert_eq!(
+        output_pwm_pair(OutputBrightness::new(200).unwrap(), warmest),
+        [1, 0]
+    );
+    assert_eq!(
+        output_pwm_pair(
+            OutputBrightness::from_level(Level::DEFAULT),
+            ColorTemperature::DEFAULT
+        ),
+        [6, 2]
+    );
+    assert_eq!(
+        output_pwm_pair(
+            OutputBrightness::from_level(Level::DEFAULT),
+            Preset::Two.temperature()
+        ),
+        [3, 6]
+    );
+}
+
+#[test]
+fn off_frame_suppresses_even_inconsistent_nonzero_brightness() {
+    let frame = OutputFrame {
+        state: LightState::default(),
+        brightness: OutputBrightness::MAX,
+    };
+    assert_eq!(output_frame(frame), stock_frame(LightState::default()));
+    let (h, mut driver) = fixture();
+    driver.apply_frame(frame).unwrap();
+    assert!(!h.borrow().events.contains(&Event::Oe(false)));
+    assert_eq!(
+        h.borrow().registers[2..],
+        stock_frame(LightState::default())
+    );
+}
+
+#[test]
+fn subfloor_frame_readback_uses_exact_brightness_and_not_logical_level() {
+    let (h, mut driver) = fixture();
+    let state = LightState {
+        on: true,
+        level: Level::MIN,
+        temperature: ColorTemperature::MAX,
+    };
+    let frame = OutputFrame {
+        state,
+        brightness: OutputBrightness::new(100).unwrap(),
+    };
+    driver.apply_frame(frame).unwrap();
+    assert_eq!([h.borrow().registers[2], h.borrow().registers[6]], [0, 0]);
+    driver.verify_frame(frame).unwrap();
+    assert_eq!(driver.verify(state), Err(DriverError::ReadbackMismatch));
+    driver.apply_frame(frame).unwrap();
+    driver.verify_frame(frame).unwrap();
+}
+
+#[test]
+fn quantized_transition_changes_only_read_back_without_output_or_oe_writes() {
+    let (h, mut driver) = fixture();
+    let state = LightState {
+        on: true,
+        level: Level::MIN,
+        temperature: ColorTemperature::MAX,
+    };
+    let first = OutputFrame {
+        state,
+        brightness: OutputBrightness::new(200).unwrap(),
+    };
+    let next = OutputFrame {
+        brightness: OutputBrightness::new(201).unwrap(),
+        ..first
+    };
+    assert_eq!(output_frame(first), output_frame(next));
+    let mut controller = Controller::new(Some(state));
+    controller.reconcile_frame(&mut driver, first).unwrap();
+    h.borrow_mut().events.clear();
+    assert_eq!(controller.reconcile_frame(&mut driver, next), Ok(true));
+    assert_eq!(controller.applied_frame(), Some(next));
+    assert_eq!(h.borrow().events, [Event::Read]);
+    h.borrow_mut().events.clear();
+    assert_eq!(controller.reconcile_frame(&mut driver, next), Ok(false));
+    assert!(h.borrow().events.is_empty());
+}
+
+#[test]
+fn failed_subfloor_write_verification_cannot_acknowledge_a_frame() {
+    let (h, mut driver) = fixture();
+    let target = LightState {
+        on: true,
+        ..LightState::default()
+    };
+    let mut controller = Controller::new(Some(target));
+    controller.reconcile(&mut driver).unwrap();
+    let frame = OutputFrame {
+        state: LightState {
+            level: Level::MIN,
+            ..target
+        },
+        brightness: OutputBrightness::new(100).unwrap(),
+    };
+    h.borrow_mut().reset_after_write = true;
+    assert_eq!(
+        controller.reconcile_frame(&mut driver, frame),
+        Err(DriverError::ReadbackMismatch)
+    );
+    assert_eq!(controller.applied(), None);
+    assert_eq!(controller.applied_frame(), None);
+    assert_eq!(controller.intended(), target);
+    assert_eq!(h.borrow().events.last(), Some(&Event::Oe(true)));
+    controller.reconcile_frame(&mut driver, frame).unwrap();
+    assert_eq!(controller.applied_frame(), Some(frame));
+    assert_eq!(h.borrow().registers[2..], output_frame(frame));
 }

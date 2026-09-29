@@ -1,7 +1,7 @@
 use std::{convert::Infallible, env, process::ExitCode};
 
 use key_right_core::{
-    ColorTemperature, Command, Controller, Level, LightOutput, LightState, Preset,
+    ColorTemperature, Command, Controller, Level, LightOutput, OutputFrame, Preset,
 };
 
 const USAGE: &str = "Usage: key-right simulate [on|off|level=N|mired=N|preset-1|preset-2]...\n\
@@ -18,7 +18,7 @@ struct SimulatedOutput {
 impl LightOutput for SimulatedOutput {
     type Error = Infallible;
 
-    fn apply(&mut self, _state: LightState) -> Result<(), Self::Error> {
+    fn apply_frame(&mut self, _frame: OutputFrame) -> Result<(), Self::Error> {
         self.writes += 1;
         Ok(())
     }

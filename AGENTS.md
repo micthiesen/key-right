@@ -41,13 +41,15 @@ reported; powered PCA readback subsequently passed on the first rewired board.
 Michael measured blue/OE to black/GND at 3.34 V Off and 0.01 V On. These steady
 levels pass. First-board unloaded connector Off/On/Off, Home power/brightness/
 temperature controls, and one cold power-cycle restoration also passed.
-Michael subsequently reported successful overall operation of the first lamp.
 The second board has passed real PCA checks, saved-Off reboot, Home
 commissioning with its own fabrics and credentials, and the final control/Off
-check after a Home app restart cleared an idle spinner. It is ready for
-unpowered assembly with saved Off. Detailed loaded startup and second-lamp
-operation remain unverified; do not turn those limits into
-requests to repeat completed probing.
+check after a Home app restart cleared an idle spinner. Both assembled lamps
+now work well per Michael, running 0.1.3, but have a faint central orange glow
+when Off and powered. `docs/off-glow-investigation.md` owns the next-opening
+visual indicator-mask test and conditional electrical alternatives. No source
+is confirmed; do not invent an indicator GPIO, transistor pad or OE pull-down.
+0.1.4 is prepared, not flashed. Detailed loaded startup remains unverified;
+do not turn that limit into requests to repeat completed probing.
 Both installed boards report 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 
@@ -76,6 +78,14 @@ temperature settings. Do not change this to unconditional Off at every boot.
 At level 57, preserve raw warm/cool 6/2 at 303 mired and 3/6 at 200
 mired. These are command regressions, not optical calibration. Low output has
 eight-bit PCA quantization. Do not advertise RGB or Adaptive Lighting.
+
+Normal power/level/temperature/scene changes use 400 ms smoothstep easing for
+zero-duration commands; positive durations are honored and rate Move stays
+linear. Physical `OutputFrame` brightness spans true zero to stock 10%, separate
+from durable Matter 1..254 targets. Retarget from acknowledged frames; never
+persist or report intermediate frames as destinations. Off-setting changes
+cannot brighten/recolour a fade-out. USB Off, faults and service shutdown stay
+immediate. Boot/runtime fault recovery verifies zero before fading valid saved On.
 
 Two physical lamps are two separately commissioned nodes grouped in Apple Home;
 firmware does not couple them or promise simultaneous output. The former

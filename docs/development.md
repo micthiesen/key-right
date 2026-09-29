@@ -11,11 +11,13 @@ considers bench probing complete; LEDs reconnect during unpowered reassembly.
 Firmware 0.1.3 passed real Wi-Fi reconnection, two transport recreations in one
 boot, watchdog recovery of saved On and reboot recovery of saved Off.
 After delayed Home resubscription, the final target/Off card check also passed.
-Michael subsequently reported successful overall operation of the first lamp.
 The second board passed PCA checks and saved-Off reboot on the same image,
 then joined Home with both fabrics persisted. Its final control/Off check passed
-after restarting Home cleared an idle spinner. It is saved Off and ready for
-unpowered assembly.
+after restarting Home cleared an idle spinner. Both lamps are now assembled;
+Michael reports good overall operation, with a faint central orange glow while
+Off and powered. See the [glow investigation](off-glow-investigation.md).
+Firmware 0.1.4 adds smooth physical transitions and is prepared for a later
+reflash. The installed firmware is still 0.1.3; no new hardware pass is implied.
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 
@@ -218,6 +220,15 @@ builds and checks image/partition fit without a connected board. The default
 port command checks the connected device before flashing the real image.
 `--bench` explicitly selects the simulated image; it cannot validate the PCA.
 
+For the next planned opening, use the normal real image (0.1.4, Matter software
+version 5), retain each board's NVS and existing Home membership, and follow the
+VBUS-blocked USB rule. No new commissioning or routine probing is needed.
+After update, verify On/Off, brightness and temperature fades visually, interrupt
+a fade with another setting, and check that Home holds its chosen targets.
+Check saved Off after a restart before closing up. Use the
+[indicator masking comparison](off-glow-investigation.md) during the same
+opening; the firmware update is not a demonstrated glow fix.
+
 After flashing under the power rule above, inspect USB `status` and `verify`
 before changing output, so saved-state restoration remains observable. Issue
 and verify Off before unpowered reassembly. Preserve each board's existing Home
@@ -301,7 +312,10 @@ reports intended and acknowledged state separately and marks physical output
 unmeasured. `level` accepts 1–254; `temperature` accepts 143–344 mired. Both
 retain the current power state. `on` restores that level and temperature.
 Healthy Matter attributes report the durable target during a transition;
-`status` still exposes the separately acknowledged intermediate frame. Known
+`status` still exposes the separately acknowledged intermediate frame and its
+exact `acknowledged_stock_percent_numerator` over denominator 253, plus remaining
+transition times. This coordinate includes zero and sub-minimum fade output;
+the logical `acknowledged.level` alone cannot describe that region. Known
 output/storage faults remain read errors. A WithOnOff level command at minimum
 level 1 turns Off; ordinary level commands preserve an Off target during its fade.
 Legacy USB shortcuts `on 1` and `on 2` select level `57` at 303 and 200 mired
@@ -310,6 +324,25 @@ One serialized state owner handles both Matter and console commands. Close a
 monitor before issuing a command. The USB helper does not retry commands
 automatically; a timeout can mean a command executed, so read `status` before
 repeating it.
+
+Ordinary commands use 400 ms smoothstep easing, including zero-duration Home
+commands. Positive explicit durations are retained; rate-based Matter Move is
+linear. Power/level and temperature tracks are independent. The maintenance
+loop waits 20 ms between polls while timed On/Off counters retain their 100 ms
+units and reporting retains its existing cadence. Interrupted fades start at
+the last acknowledged output, not the target. Identical positional destinations
+retain their deadline; replacement Move rates take effect immediately.
+No interpolated frame is persisted or substituted into Home's
+target attributes.
+
+Physical brightness uses a separate 0..2530 coordinate, where 253 is stock
+nominal 1% and 2530 is 10%. Settled On commands preserve the existing arithmetic
+and PWM bytes. Off fades to zero with its colour held; ExecuteIfOff setting
+changes only update memory. Stop rounds physical output to the nearest legal
+On level or Off (below half stock 1%); the temperature axis retains its own
+track. USB `off`, controlled reboot and fault shutdown bypass animation.
+PCA frames are read back at the exact physical coordinate. Equivalent quantized
+frames avoid redundant writes and OE transitions; unchanged frames skip I/O.
 
 The native USB connection is local diagnostics only. The protocol returns
 `KR OK` or `KR ERR`; it is not the handoff's proposed `keylight`/JSON interface.
@@ -321,12 +354,14 @@ stored On/Toggle policies normalize to Restore. Version-3 records retain power,
 level and temperature. Version-2 preset migration retains saved power and the
 selected 303/200 mired temperature at level `57`, with the selected preset's
 explicit startup Off retained. Migration never erases commissioning.
+Valid saved On fades from verified zero over 400 ms; saved Off remains zero.
 OE release and stock zero-PWM initialization minimize output once the ESP runs;
 they do not prove darkness before boot or under connected-panel startup.
 
 Output faults invalidate acknowledgement, attempt Off, and retry durable intent
-after five seconds; recovery does not require a new On command. Invalid stored
-intent records report a fault and are retained until explicit local Off repairs them.
+after five seconds, fading valid On from verified zero; recovery does not
+require a new On command. Invalid stored intent records report a fault and are
+retained until explicit local Off repairs them.
 No physical flash or operational pass is claimed by the software checks.
 
 ## Recovery and validation limits

@@ -1,5 +1,6 @@
 use key_right_core::{
-    ColorTemperature, Command, Controller, Level, LightOutput, LightState, Preset,
+    ColorTemperature, Command, Controller, Level, LightOutput, LightState, OutputBrightness,
+    OutputFrame, Preset,
 };
 
 #[derive(Default)]
@@ -7,14 +8,16 @@ struct Output {
     fail: bool,
     writes: usize,
     last_attempt: Option<LightState>,
+    last_frame: Option<OutputFrame>,
 }
 
 impl LightOutput for Output {
     type Error = &'static str;
 
-    fn apply(&mut self, state: LightState) -> Result<(), Self::Error> {
+    fn apply_frame(&mut self, frame: OutputFrame) -> Result<(), Self::Error> {
         self.writes += 1;
-        self.last_attempt = Some(state);
+        self.last_attempt = Some(frame.state);
+        self.last_frame = Some(frame);
         if self.fail {
             Err("I2C write failed")
         } else {
@@ -149,4 +152,102 @@ fn partial_write_failure_invalidates_acknowledgement_and_can_retry() {
     assert_eq!(controller.reconcile(&mut output), Ok(true));
     assert_eq!(controller.applied(), Some(controller.intended()));
     assert_eq!(output.writes, 3);
+}
+
+#[test]
+fn physical_brightness_covers_zero_and_round_trips_all_settled_levels() {
+    assert_eq!(OutputBrightness::ZERO.get(), 0);
+    assert_eq!(OutputBrightness::ZERO.to_level_clamped(), Level::MIN);
+    assert_eq!(OutputBrightness::MAX.get(), 2530);
+    for value in 0..=u16::MAX {
+        assert_eq!(
+            OutputBrightness::new(value).map(OutputBrightness::get),
+            (value <= 2530).then_some(value)
+        );
+    }
+    for value in 1..=254 {
+        let level = Level::new(value).unwrap();
+        let brightness = OutputBrightness::from_level(level);
+        assert_eq!(brightness.to_level_clamped(), level);
+        assert_eq!(
+            (
+                u32::from(brightness.get()),
+                u32::from(OutputBrightness::DENOMINATOR)
+            ),
+            level.stock_brightness_ratio()
+        );
+    }
+    for value in 0..=2530 {
+        let brightness = OutputBrightness::new(value).unwrap();
+        let nearest = OutputBrightness::from_level(brightness.to_level_clamped());
+        if value < 253 {
+            assert_eq!(nearest, OutputBrightness::from_level(Level::MIN));
+        } else {
+            assert!(value.abs_diff(nearest.get()) <= 4);
+        }
+    }
+}
+
+#[test]
+fn subfloor_frame_is_acknowledged_exactly_without_changing_target() {
+    let target = LightState {
+        on: true,
+        ..LightState::default()
+    };
+    let mut controller = Controller::new(Some(target));
+    let mut output = Output::default();
+    let frame = OutputFrame {
+        state: LightState {
+            level: Level::MIN,
+            ..target
+        },
+        brightness: OutputBrightness::new(200).unwrap(),
+    };
+    assert_eq!(controller.reconcile_frame(&mut output, frame), Ok(true));
+    assert_eq!(controller.intended(), target);
+    assert_eq!(controller.applied(), Some(frame.state));
+    assert_eq!(controller.applied_frame(), Some(frame));
+    assert_eq!(output.last_frame, Some(frame));
+    assert_eq!(controller.reconcile_frame(&mut output, frame), Ok(false));
+    assert_eq!(output.writes, 1);
+
+    let next = OutputFrame {
+        brightness: OutputBrightness::new(201).unwrap(),
+        ..frame
+    };
+    assert_eq!(controller.reconcile_frame(&mut output, next), Ok(true));
+    assert_eq!(controller.applied_frame(), Some(next));
+    controller.invalidate_applied();
+    assert_eq!(controller.applied_frame(), None);
+    assert_eq!(controller.applied(), None);
+    assert_eq!(controller.intended(), target);
+}
+
+#[test]
+fn failed_custom_frame_clears_both_acknowledgements_and_preserves_target() {
+    let target = LightState {
+        on: true,
+        ..LightState::default()
+    };
+    let mut controller = Controller::new(Some(target));
+    let mut output = Output::default();
+    controller.reconcile(&mut output).unwrap();
+    let frame = OutputFrame {
+        state: LightState {
+            level: Level::MIN,
+            ..target
+        },
+        brightness: OutputBrightness::new(200).unwrap(),
+    };
+    output.fail = true;
+    assert_eq!(
+        controller.reconcile_frame(&mut output, frame),
+        Err("I2C write failed")
+    );
+    assert_eq!(controller.applied(), None);
+    assert_eq!(controller.applied_frame(), None);
+    assert_eq!(controller.intended(), target);
+    output.fail = false;
+    controller.reconcile_frame(&mut output, frame).unwrap();
+    assert_eq!(controller.applied_frame(), Some(frame));
 }

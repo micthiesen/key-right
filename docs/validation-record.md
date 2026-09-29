@@ -11,7 +11,10 @@ The first board passed the physical bench checks and controlled recovery tests
 below; Michael now reports successful overall operation of that lamp. The second
 board passed PCA register checks, saved-Off reboot and Home control checks.
 Michael confirmed Off held without a spinner after refreshing Home. The second
-board is saved Off and ready for unpowered assembly. Probing is complete.
+board passed the final saved-Off check before assembly. Both lamps are now
+assembled and working well per Michael. He reports faint orange glow near the
+centre while Off and powered; optical darkness is unresolved. Probing is
+complete. Firmware 0.1.4 is prepared for a future reflash, not installed.
 Detailed loaded results and remaining limits are recorded per board below.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
@@ -578,11 +581,18 @@ watchdog fault tests were not repeated on the second board.
 
 ## LED-connected observations and remaining checks
 
-After the first board was released for reassembly, Michael reported that the
-first lamp works great. Record this as successful overall operation, without
+After both boards were released for reassembly, Michael reported that both
+lamps work great. Record this as successful overall operation, without
 inferring individual startup-flash, optical-calibration, radio-recovery or
-grouping checks from that report. Its installed image is firmware 0.1.3,
-commit `b43e6bd`. The second lamp's loaded operation remains pending.
+grouping checks from that report. The installed image is firmware 0.1.3,
+commit `b43e6bd`, on both lamps.
+
+On 2026-09-29 he reported a faint orange glow, concentrated near the centre,
+while Off with power connected. Its source is not established. The earlier
+zero-PWM readback and unloaded millivolt readings do not supersede this loaded
+observation. The [investigation](off-glow-investigation.md) prioritizes masking
+the ESP indicator at the next planned opening before an electrical change.
+No new measurement or visual masking result exists yet.
 
 The panels cannot be connected until reassembly. Reconnect with power removed,
 after the bench results support proceeding. No further routine probing is owed.
@@ -592,8 +602,8 @@ LEDs cannot establish the remaining loaded checks below.
 
 | Check | Observation |
 | --- | --- |
-| Firmware commit and LED reconnection date | Pending |
-| Off after application initialization | Pending |
+| Firmware commit and LED reconnection date | Both run `b43e6bd` / 0.1.3; assembled operation reported September 29 |
+| Off after application initialization | Faint orange glow near centre while powered; source unresolved |
 | Home low/high brightness, stock nominal 1%/10% limits | Pending |
 | Temperature minimum/maximum, 143/344 mired | Pending |
 | Initial level 57 and 303 mired, warm/cool raw PCA `6/2` | Pending |
@@ -609,6 +619,13 @@ LEDs cannot establish the remaining loaded checks below.
 | One grouped lamp offline while the other remains controllable | Pending |
 | Short Wi-Fi/AP interruption and automatic recovery preserving intent | Pending |
 | USB removed, ordinary lamp-powered operation | Pending |
+
+Firmware 0.1.4 adds 400 ms eased physical transitions, true-zero fade endpoints,
+and separate target reporting. It has not been flashed or observed on the
+panels. Software results belong in [software validation](software-validation.md).
+At the next requested reflash, retain NVS and verify the fades, target display,
+saved-Off reboot and indicator masking visually. Routine meter probing remains
+complete. Eight-bit PWM can still produce visible steps near minimum output.
 
 ## Interpretation
 

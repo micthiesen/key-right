@@ -41,6 +41,46 @@ impl Default for Level {
     }
 }
 
+/// Physical transition brightness in 1/253 of a nominal stock percentage.
+///
+/// Unlike a Matter level, this can reach zero and pass below the normal 1%
+/// floor. It remains bounded by the same nominal 10% ceiling, not a measured
+/// optical brightness. Only settled targets belong in persistent light state.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct OutputBrightness(u16);
+
+impl OutputBrightness {
+    pub const ZERO: Self = Self(0);
+    pub const MAX: Self = Self(2530);
+    pub const DENOMINATOR: u16 = 253;
+
+    pub const fn new(value: u16) -> Option<Self> {
+        if value <= Self::MAX.0 {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    pub const fn get(self) -> u16 {
+        self.0
+    }
+
+    pub const fn from_level(level: Level) -> Self {
+        Self(253 + 9 * (level.get() as u16 - 1))
+    }
+
+    /// Nearest representable logical level, clamped at the nonzero floor.
+    /// Keep this display approximation separate from the exact output value.
+    pub const fn to_level_clamped(self) -> Level {
+        if self.0 <= 253 {
+            Level::MIN
+        } else {
+            Level((1 + (self.0 - 253 + 4) / 9) as u8)
+        }
+    }
+}
+
 /// Stock colour-temperature command in mired, approximately 7000..2900 K.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ColorTemperature(u16);
@@ -94,6 +134,30 @@ pub struct LightState {
     pub temperature: ColorTemperature,
 }
 
+/// Acknowledged output coordinates, distinct from the durable command target.
+///
+/// `state.level` describes the nearest logical level during a transition;
+/// `brightness` retains the exact sub-floor output coordinate. Off always
+/// suppresses output, even if a caller supplies a nonzero brightness.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct OutputFrame {
+    pub state: LightState,
+    pub brightness: OutputBrightness,
+}
+
+impl OutputFrame {
+    pub const fn from_state(state: LightState) -> Self {
+        Self {
+            state,
+            brightness: if state.on {
+                OutputBrightness::from_level(state.level)
+            } else {
+                OutputBrightness::ZERO
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Command {
     SetPower(bool),
@@ -110,13 +174,19 @@ pub trait LightOutput {
     ///
     /// An error may mean a partial write. Retrying must be safe and reapply the
     /// whole state. A successful write acknowledges I/O, not measured light output.
-    fn apply(&mut self, state: LightState) -> Result<(), Self::Error>;
+    fn apply(&mut self, state: LightState) -> Result<(), Self::Error> {
+        self.apply_frame(OutputFrame::from_state(state))
+    }
+
+    /// Apply the exact physical frame, including brightness below the ordinary
+    /// level floor. Adapters must not reconstruct PWM from `state.level`.
+    fn apply_frame(&mut self, frame: OutputFrame) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug)]
 pub struct Controller {
     intended: LightState,
-    applied: Option<LightState>,
+    applied: Option<OutputFrame>,
 }
 
 impl Controller {
@@ -135,6 +205,14 @@ impl Controller {
 
     /// Last acknowledged state, or unknown after boot or a failed output write.
     pub const fn applied(&self) -> Option<LightState> {
+        match self.applied {
+            Some(frame) => Some(frame.state),
+            None => None,
+        }
+    }
+
+    /// Last complete output coordinates acknowledged by the adapter.
+    pub const fn applied_frame(&self) -> Option<OutputFrame> {
         self.applied
     }
 
@@ -160,15 +238,25 @@ impl Controller {
     /// Apply pending intent once. The caller owns retry timing and I/O deadlines.
     /// Returns false when there is nothing to write.
     pub fn reconcile<O: LightOutput>(&mut self, output: &mut O) -> Result<bool, O::Error> {
-        if self.applied == Some(self.intended) {
+        self.reconcile_frame(output, OutputFrame::from_state(self.intended))
+    }
+
+    /// Apply an exact transition frame while retaining the caller's intent.
+    /// Only a successful complete application establishes acknowledgement.
+    pub fn reconcile_frame<O: LightOutput>(
+        &mut self,
+        output: &mut O,
+        frame: OutputFrame,
+    ) -> Result<bool, O::Error> {
+        if self.applied == Some(frame) {
             return Ok(false);
         }
 
         // A failed write can leave output partially updated, so discard the old
         // acknowledgement before attempting I/O and preserve intent for retry.
         self.applied = None;
-        output.apply(self.intended)?;
-        self.applied = Some(self.intended);
+        output.apply_frame(frame)?;
+        self.applied = Some(frame);
         Ok(true)
     }
 }

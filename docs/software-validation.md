@@ -1,5 +1,47 @@
 # Software verification
 
+## 2026-09-29 smooth transitions, 0.1.4 (not flashed)
+
+Both software gates passed for the prepared release, with the installed lamps
+left on 0.1.3. Basic Information software version is **5 / `0.1.4`**. Dependency
+pins, NVS layout, network recovery, board wiring and settled PCA configuration
+are unchanged.
+
+| Check | Result |
+| --- | --- |
+| `sh scripts/check.sh` | Formatting, strict Clippy, 34 core/CLI Rust tests, CLI simulation and 29 Python tests passed |
+| `sh scripts/check-firmware.sh` | Formatting, strict host/C3 Clippy, 86 application host tests, simulated/real/radio-diagnostic release builds and linked-stack checks passed |
+| `sh scripts/flash.sh --check` | Real image: 1,931,440 / 4,063,232 bytes, 47.53%; linked main-stack reservation 41,200 bytes |
+| `sh scripts/flash.sh --bench --check` | Simulated image: 1,914,304 / 4,063,232 bytes, 47.11%; linked main-stack reservation 42,592 bytes |
+
+New coverage exercises smoothstep timing and true-zero endpoints, physical
+brightness below the normal On floor, interrupted/reversed fades, independent
+temperature/brightness tracks, stable Home targets, no per-frame flash writes,
+remembered Off settings, linear Matter Move, Stop rounding, scene commits and
+zero-first restoration. Existing fault tests cover immediate shutdown and
+subsequent recovery to the saved destination. Core tests verify the exact
+physical frame and retain readback for quantized-equivalent PWM.
+
+Independent general and invariant reviews found two reproducible defects in
+the initial implementation: endpoint deduplication discarded replacement Move
+rates, and SlowFade could round a sub-minimum frame upward. Both were corrected.
+The original isolated repros and committed regressions pass; focused re-review
+found no further issue. Hardware-evidence review checked the separate
+[glow investigation](off-glow-investigation.md); its source diagnosis and
+electrical fallback remain conditional.
+
+An initial ad hoc application check from the repository root selected the host
+architecture and failed in `portable-atomic`. The required gate runs from the
+application directory with the explicit C3 target; all three MCU variants passed.
+No SDK or dependency change was needed.
+
+These checks do not establish visual smoothness, darkness, or live Home behavior
+on 0.1.4. No board was connected, flashed, reset or probed for this release.
+Observe the fades and check retained Home targets after the next requested
+update. Eight-bit PCA quantization remains visible in principle at low output.
+The ELF files remain under
+`firmware/app/target/riscv32imc-unknown-none-elf/release/`.
+
 ## 2026-09-28 final firmware hardening, 0.1.3
 
 The current target is `esp32c3` / `riscv32imc-unknown-none-elf`, with one Matter
@@ -197,8 +239,10 @@ Off and saved-Off reboot. Both Home fabrics completed commissioning and were
 persisted; two controller subscriptions were primed. Home power, brightness and
 temperature commands reached the real driver. An idle spinner cleared after
 restarting Home; Michael confirmed Off held, and zero PWM verified. The second
-board is saved Off and ready for unpowered assembly. Its loaded operation remains
-pending; the first board's network/watchdog fault tests were not repeated on it.
+board was saved Off before assembly; the first board's network/watchdog fault
+tests were not repeated on it. Michael subsequently reported that both assembled
+lamps work well, with faint central orange glow while Off and powered. Its
+source remains unresolved; register-zero Off is not proof of optical darkness.
 
 These live results are separate from the build/test gates above. The
 [validation record](validation-record.md) retains their measurements, exact
@@ -206,5 +250,5 @@ states, failure findings and private-log locations. Michael considers probing
 complete; no further routine connector measurements are owed on either board.
 
 Detailed loaded-output/startup checks, closed-housing radio recovery, two-lamp
-Home grouping, sustained outages and the second lamp's loaded operation remain
+Home grouping and sustained outages remain
 unverified. Use [bench bring-up](bench-bring-up.md) for service and reassembly.

@@ -1,5 +1,5 @@
 use crate::runtime::{Fault, Hardware, OutputError, Runtime, INTENT_KEY};
-use key_right_core::{ColorTemperature, Level, LightOutput, LightState};
+use key_right_core::{ColorTemperature, Level, LightOutput, LightState, OutputFrame};
 use rs_matter::error::{Error, ErrorCode};
 use rs_matter::persist::{KvBlobStore, KvBlobStoreAccess, KV_BUF_SIZE};
 use std::cell::{Cell, RefCell};
@@ -14,6 +14,7 @@ struct Rig {
     load_calls: Cell<u32>,
     fail_output: Cell<bool>,
     actual: Cell<Option<LightState>>,
+    actual_frame: Cell<Option<OutputFrame>>,
 }
 struct Store(Rc<Rig>);
 struct Access(Rc<Rig>);
@@ -51,12 +52,13 @@ impl KvBlobStoreAccess for Access {
 struct Output(Rc<Rig>);
 impl LightOutput for Output {
     type Error = OutputError;
-    fn apply(&mut self, state: LightState) -> Result<(), OutputError> {
-        self.0.events.borrow_mut().push(format!("apply:{state:?}"));
+    fn apply_frame(&mut self, frame: OutputFrame) -> Result<(), OutputError> {
+        self.0.events.borrow_mut().push(format!("apply:{frame:?}"));
         if self.0.fail_output.get() {
             return Err(OutputError::Bus);
         }
-        self.0.actual.set(Some(state));
+        self.0.actual.set(Some(frame.state));
+        self.0.actual_frame.set(Some(frame));
         Ok(())
     }
 }
@@ -67,10 +69,14 @@ impl Hardware for Output {
             return Err(OutputError::Bus);
         }
         self.0.actual.set(Some(LightState::default()));
+        self.0.actual_frame.set(Some(OutputFrame::default()));
         Ok(())
     }
-    fn verify(&mut self, state: LightState) -> Result<(), OutputError> {
-        if self.0.fail_output.get() || self.0.actual.get() != Some(state) {
+    fn verify_frame(&mut self, frame: OutputFrame) -> Result<(), OutputError> {
+        if self.0.fail_output.get()
+            || self.0.actual.get() != Some(frame.state)
+            || self.0.actual_frame.get() != Some(frame)
+        {
             Err(OutputError::Readback)
         } else {
             Ok(())
@@ -138,11 +144,15 @@ fn reported_targets_remain_unavailable_after_failed_storage_output_or_reboot() {
     h.fail_store.set(false);
     r.tick(5000);
     assert!(r.reported().unwrap().on);
+    r.tick(5400);
     h.fail_output.set(true);
-    assert!(r.set_power(false).is_err());
+    r.set_power(false).unwrap();
+    // Starting the fade retains the last frame; the next changed frame
+    // detects the injected I/O failure and invalidates reported attributes.
+    r.tick(5420);
     assert!(r.reported().is_err());
     h.fail_output.set(false);
-    r.tick(10000);
+    r.tick(10420);
     assert!(!r.reported().unwrap().on);
     let revision = r.snapshot().revision;
     assert!(r.prepare_reboot());
@@ -166,6 +176,7 @@ fn state_is_saved_before_io_and_repeated_commands_do_not_write_flash() {
     let intended = r.snapshot().intended;
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
+    reboot.tick(400);
     assert_eq!(reboot.acknowledged().unwrap(), intended);
 }
 
@@ -181,6 +192,8 @@ fn absent_pca_preserves_commands_for_bounded_recovery() {
     r.tick(4999);
     assert!(r.acknowledged().is_err());
     r.tick(5000);
+    assert!(!r.acknowledged().unwrap().on);
+    r.tick(5400);
     assert!(r.acknowledged().unwrap().on);
 }
 
@@ -197,6 +210,8 @@ fn failed_save_never_applies_pending_on_and_retries_it() {
     r.tick(4999);
     assert!(r.acknowledged().is_err());
     r.tick(5000);
+    assert!(!r.acknowledged().unwrap().on);
+    r.tick(5400);
     assert!(r.acknowledged().unwrap().on);
 }
 
@@ -205,13 +220,14 @@ fn failed_off_can_leave_physical_on_without_acknowledging_off() {
     let (h, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
+    r.tick(400);
     h.fail_output.set(true);
     assert!(r.off().is_err());
     assert!(!r.snapshot().intended.on);
     assert!(r.acknowledged().is_err());
     assert!(h.actual.get().unwrap().on);
     h.fail_output.set(false);
-    r.tick(5000);
+    r.tick(5400);
     assert!(!r.acknowledged().unwrap().on);
 }
 
@@ -223,12 +239,16 @@ fn periodic_readback_failure_marks_unknown_then_restores_all_settings() {
     r.set_level(Level::MAX, false).unwrap();
     r.set_temperature(ColorTemperature::MIN).unwrap();
     let intended = r.snapshot().intended;
+    r.tick(400);
     h.actual.set(None);
-    r.tick(5000);
+    h.actual_frame.set(None);
+    r.tick(5400);
     assert!(r.acknowledged().is_err());
-    r.tick(9999);
+    r.tick(10399);
     assert!(r.acknowledged().is_err());
-    r.tick(10000);
+    r.tick(10400);
+    assert!(!r.acknowledged().unwrap().on);
+    r.tick(10800);
     assert_eq!(r.acknowledged().unwrap(), intended);
     assert_eq!(r.snapshot().recoveries, 1);
 }
@@ -269,6 +289,7 @@ fn legacy_presets_migrate_once_and_restore_the_selected_temperature() {
         .insert(INTENT_KEY, vec![2, 1, 1, 2, 2]);
     let r = Runtime::load(Access(h.clone()), Output(h.clone()));
     r.tick(0);
+    r.tick(400);
     let state = r.acknowledged().unwrap();
     assert!(state.on);
     assert_eq!(state.level, Level::DEFAULT);
@@ -278,6 +299,7 @@ fn legacy_presets_migrate_once_and_restore_the_selected_temperature() {
     r.set_power(false).unwrap();
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
+    reboot.tick(400);
     assert!(!reboot.acknowledged().unwrap().on);
     assert_eq!(reboot.acknowledged().unwrap().temperature.get(), 200);
 }
@@ -298,6 +320,8 @@ fn transient_read_failure_retries_and_applies_startup_only_once() {
     assert_eq!(r.snapshot().storage_failures, 2);
     h.fail_load.set(false);
     r.tick(10000);
+    assert!(!r.acknowledged().unwrap().on);
+    r.tick(10400);
     assert!(r.acknowledged().unwrap().on);
     r.tick(15000);
     assert!(r.acknowledged().unwrap().on);
@@ -339,6 +363,7 @@ fn startup_settings_are_atomic_durable_and_do_not_change_live_output() {
     let (h, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
+    r.tick(400);
     h.fail_store.set(true);
     assert!(r.set_startup(Some(Startup::Off)).is_err());
     assert!(r.set_startup_level(Some(254)).is_err());
@@ -363,6 +388,7 @@ fn startup_settings_are_atomic_durable_and_do_not_change_live_output() {
     h.fail_store.set(true);
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
+    reboot.tick(400);
     assert!(reboot.acknowledged().is_err());
     h.fail_store.set(false);
     reboot.tick(5000);
@@ -381,11 +407,12 @@ fn independent_fades_persist_destinations_not_intermediate_frames() {
     let (h, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
+    r.tick(400);
     r.set_level_transition(254, false, 2000).unwrap();
     r.set_temperature_transition(ColorTemperature::MIN, 1000)
         .unwrap();
     h.events.borrow_mut().clear();
-    r.tick(500);
+    r.tick(900);
     let half = r.acknowledged().unwrap();
     assert!(half.level.get() > 57 && half.level.get() < 254);
     assert_eq!(half.temperature.get(), 223);
@@ -394,6 +421,7 @@ fn independent_fades_persist_destinations_not_intermediate_frames() {
     assert!(!h.events.borrow().iter().any(|e| e.starts_with("store:")));
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
+    reboot.tick(400);
     assert_eq!(
         reboot.acknowledged().unwrap(),
         LightState {
@@ -420,6 +448,7 @@ fn stopped_fade_is_durable_and_does_not_stop_other_axis() {
     assert_eq!(r.acknowledged().unwrap().temperature, ColorTemperature::MIN);
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
+    reboot.tick(400);
     assert_eq!(reboot.acknowledged().unwrap(), r.acknowledged().unwrap());
 }
 
@@ -428,14 +457,15 @@ fn fade_to_off_and_immediate_off_never_relight_from_a_pending_track() {
     let (_, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
+    r.tick(400);
     r.set_level_transition(0, true, 1000).unwrap();
-    r.tick(500);
+    r.tick(900);
     assert!(r.acknowledged().unwrap().on);
-    r.tick(1000);
+    r.tick(1400);
     assert!(!r.acknowledged().unwrap().on);
     r.set_level_transition(254, true, 2000).unwrap();
-    r.tick(1500);
-    r.set_power(false).unwrap();
+    r.tick(1900);
+    r.off().unwrap();
     r.tick(4000);
     assert!(!r.acknowledged().unwrap().on);
     assert_eq!(r.level_remaining_ms(), 0);
@@ -449,6 +479,7 @@ fn out_of_band_settings_while_off_do_not_energize_output() {
     r.set_temperature(ColorTemperature::MIN).unwrap();
     assert!(!r.acknowledged().unwrap().on);
     r.set_power(true).unwrap();
+    r.tick(400);
     assert_eq!(r.acknowledged().unwrap().level, Level::MAX);
     assert_eq!(r.acknowledged().unwrap().temperature, ColorTemperature::MIN);
 }
@@ -464,6 +495,8 @@ fn failed_fade_recovers_to_its_durable_destination() {
     assert!(r.acknowledged().is_err());
     h.fail_output.set(false);
     r.tick(5500);
+    assert!(!r.acknowledged().unwrap().on);
+    r.tick(5900);
     assert_eq!(r.acknowledged().unwrap().level, Level::MAX);
     assert_eq!(r.level_remaining_ms(), 0);
 }
@@ -474,12 +507,15 @@ fn reboot_shutdown_keeps_target_and_cannot_reapply_during_usb_flush() {
     r.tick(0);
     r.set_power(true).unwrap();
     r.set_temperature(ColorTemperature::MIN).unwrap();
+    r.tick(400);
+    assert!(h.actual.get().unwrap().on);
     assert!(r.prepare_reboot());
     r.tick(60_000);
     assert!(!h.actual.get().unwrap().on);
     assert!(r.set_power(true).is_err());
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
+    reboot.tick(400);
     assert!(reboot.acknowledged().unwrap().on);
     assert_eq!(
         reboot.acknowledged().unwrap().temperature,
@@ -493,6 +529,7 @@ fn watchdog_test_requires_settled_verified_output_without_changing_it() {
     assert!(r.watchdog_test_ready().is_err());
     r.tick(0);
     r.set_power(true).unwrap();
+    r.tick(400);
     let state = h.actual.get();
     let records = h.records.borrow().clone();
     h.events.borrow_mut().clear();
@@ -502,7 +539,7 @@ fn watchdog_test_requires_settled_verified_output_without_changing_it() {
     assert!(h.events.borrow().is_empty());
     r.set_level_transition(254, false, 1000).unwrap();
     assert!(r.watchdog_test_ready().is_err());
-    r.tick(1000);
+    r.tick(1400);
     h.fail_output.set(true);
     assert!(r.watchdog_test_ready().is_err());
     assert!(r.acknowledged().is_err());
@@ -537,9 +574,11 @@ fn repeated_on_preserves_both_fades_and_successful_recovery_clears_backoff() {
     h.fail_output.set(false);
     r.set_power(true).unwrap();
     let recovered = r.acknowledged().unwrap();
+    assert!(!recovered.on);
+    assert_eq!(recovered.temperature, ColorTemperature::MIN);
     r.tick(1500);
     assert!(r.acknowledged().unwrap().level > recovered.level);
-    assert!(r.acknowledged().unwrap().temperature < recovered.temperature);
+    assert_eq!(r.acknowledged().unwrap().temperature, recovered.temperature);
     r.tick(2000);
     assert_eq!(r.acknowledged().unwrap().level, Level::MAX);
     assert_eq!(r.acknowledged().unwrap().temperature, ColorTemperature::MIN);
@@ -568,13 +607,14 @@ fn scene_duration_limit_is_supported_and_out_of_range_rejected_without_mutation(
 fn off_effects_keep_the_saved_level_and_never_persist_intermediate_frames() {
     use crate::runtime::OffEffect;
     for (effect, midpoint_ms, midpoint_level, end_ms) in [
-        (OffEffect::FastFade, 400, 51, 800),
-        (OffEffect::SlowFade, 800, 50, 12_800),
-        (OffEffect::DyingLight, 500, 120, 1_500),
+        (OffEffect::FastFade, 400, 36, 800),
+        (OffEffect::SlowFade, 800, 36, 12_800),
+        (OffEffect::DyingLight, 500, 125, 1_500),
     ] {
         let (h, r) = rig();
         r.tick(0);
         r.set_level_transition(100, true, 0).unwrap();
+        r.tick(400);
         h.events.borrow_mut().clear();
         r.off_with_effect(effect).unwrap();
         assert!(!r.snapshot().intended.on);
@@ -588,22 +628,25 @@ fn off_effects_keep_the_saved_level_and_never_persist_intermediate_frames() {
             1
         );
         h.events.borrow_mut().clear();
-        r.tick(midpoint_ms);
+        r.tick(400 + midpoint_ms);
         assert!(r.acknowledged().unwrap().on);
         assert_eq!(r.acknowledged().unwrap().level.get(), midpoint_level);
-        r.tick(end_ms);
+        r.tick(400 + end_ms);
         assert!(!r.acknowledged().unwrap().on);
         assert_eq!(r.acknowledged().unwrap().level.get(), 100);
         assert!(!h.events.borrow().iter().any(|e| e.starts_with("store:")));
         let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
         reboot.tick(0);
+        reboot.tick(400);
         assert!(!reboot.acknowledged().unwrap().on);
         reboot.set_power(true).unwrap();
+        reboot.tick(800);
         assert_eq!(reboot.acknowledged().unwrap().level.get(), 100);
     }
     let (_, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
+    r.tick(400);
     r.off_with_effect(OffEffect::NoFade).unwrap();
     assert!(!r.acknowledged().unwrap().on);
     assert_eq!(r.level_remaining_ms(), 0);
@@ -634,6 +677,7 @@ fn scene_recall_commits_all_axes_once_before_output_and_restores_the_destination
     assert!(r.acknowledged().unwrap().level < target.level);
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
+    reboot.tick(400);
     assert_eq!(reboot.acknowledged().unwrap(), target);
     h.fail_store.set(true);
     assert!(reboot.recall_scene(LightState::default(), 0).is_err());
@@ -642,6 +686,7 @@ fn scene_recall_commits_all_axes_once_before_output_and_restores_the_destination
     h.fail_store.set(false);
     let next_boot = Runtime::load(Access(h.clone()), Output(h.clone()));
     next_boot.tick(0);
+    next_boot.tick(400);
     assert_eq!(next_boot.acknowledged().unwrap(), target);
 }
 
@@ -660,6 +705,7 @@ fn reboot_restores_valid_power_and_settings_without_changing_other_records() {
         h.events.borrow_mut().clear();
         let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
         reboot.tick(0);
+        reboot.tick(400);
         reboot.tick(60_000);
         assert_eq!(reboot.reported().unwrap(), settings);
         assert_eq!(h.records.borrow()[&123], vec![1, 2, 3]);

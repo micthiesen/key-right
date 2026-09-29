@@ -170,6 +170,13 @@ power removed, then observe Off, brightness and temperature changes,
 startup/reset behavior, and network recovery separately. A register
 acknowledgement/readback is not a measurement of emitted light.
 
+Both assembled lamps now operate well per Michael, but have a faint central
+orange glow while Off and powered. The ESP's red indicator is the leading
+source to distinguish from panel leakage at the next planned opening. See the
+[glow investigation](off-glow-investigation.md) for the insulating-cover test,
+verified connector locations and limits on electrical alternatives. No PCA
+polarity change, OE pull-down or unverified gate connection is selected.
+
 ## Evidence provenance
 
 The board identity, five-wire map, electrical readings, rocker state, and USB

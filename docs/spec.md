@@ -20,13 +20,19 @@ Michael considers bench probing complete. Firmware 0.1.3 passed real Wi-Fi
 reconnection, repeated full transport recreation, watchdog recovery of saved
 On, and reboot recovery of saved Off. Home's card temporarily showed stale state
 after the resets; once its subscription returned, the final target/Off check
-passed. Michael subsequently reported successful overall operation of the first
-lamp. The second board runs the same final image and has passed real PCA checks,
-saved-Off reboot, Home commissioning and the final Home control/Off check. Its
-idle spinner cleared after restarting Home. It is ready for unpowered assembly.
-Loaded startup, detailed optical behavior and two-lamp grouping remain unverified.
+passed. The second board runs the same installed image and has passed real PCA
+checks, saved-Off reboot, Home commissioning and the final Home control/Off check. Its
+idle spinner cleared after restarting Home. Michael now reports that both
+assembled lamps work well, with a faint orange glow near the centre while Off
+and powered. Optical darkness is therefore unresolved; see the
+[Off-glow investigation](off-glow-investigation.md). Loaded startup, detailed
+optical behavior and two-lamp grouping remain unverified.
 The [physical validation record](validation-record.md) owns per-image results,
 including the rejected intermediate builds.
+
+Firmware **0.1.4 / software version 5** prepares smooth output transitions for
+the next planned disassembly. It is not yet flashed. Preserve both lamps'
+existing fabrics and intent; do not repeat completed routine meter probing.
 
 The firmware target is `esp32c3`, using `riscv32imc-unknown-none-elf`. Software
 validation and physical acceptance are separate; passing build gates does not
@@ -78,12 +84,27 @@ Retain brightness and temperature intent while off. The first-boot state is Off
 with level `57` and 303 mired (about 3300 K) ready for the next On command.
 
 Support Matter Groups and Scenes Management on that endpoint, including a
-16-entry scene table. Level and temperature transitions run independently;
-Stop retains the last acknowledged setting for its axis. Persist the final
-destination once, not each interpolated frame. An explicit Off cancels pending
-transitions. Scene recall saves the complete power/level/temperature target
-together and reports actuation failures. Timed On/Off and OffWithEffect use the
-same state owner; effect frames do not replace the saved brightness setting.
+16-entry scene table. Animate ordinary On, Off, level, temperature and scene
+changes over **400 ms using smoothstep easing**, including commands carrying a
+zero transition time. Honor positive explicit durations with the same easing;
+rate-based Move commands remain linear. Level/power and temperature tracks run
+independently on a 20 ms maintenance interval, subject to bus and executor time.
+Retarget from the last acknowledged physical frame. An identical positional
+destination must not keep postponing its deadline; a new Move rate replaces
+the active rate even when its endpoint is unchanged.
+
+Physical brightness spans zero through stock nominal 10%, including the region
+below the normal 1% On floor. Off fades to true zero and then releases OE.
+Freeze the current colour while fading Off; commands that only update remembered
+Off settings must not brighten or recolour that fade. Persist the destination
+once, not each interpolated frame. Stop retains the nearest legal acknowledged
+setting for its axis; brightness below half stock 1% becomes Off, since no
+nonzero Matter level represents that region. Other level rounding is at most
+half a logical step. Scene recall saves all three target fields together.
+
+Timed Off fades normally. OffWithEffect retains its requested effect timing and
+explicit NoFade variant. USB `off`, controlled reboot and storage/output-fault
+shutdown remain immediate. Effects and fade frames do not replace saved settings.
 Healthy Matter reads/reports expose the durable target immediately, keeping
 intermediate acknowledged frames separate in diagnostics. Failed output or
 storage does not become a successful target report. A level command without
@@ -173,7 +194,8 @@ ESP, and no independent output cutoff.
   Never report a known failed write as successful actuation.
 - Preserve durable power, level, temperature, and Matter membership across
   ordinary restarts and flashes. Startup first releases OE and attempts stock
-  zero PWM, then restores validated saved intent. Missing intent defaults Off.
+  zero PWM, then fades validated saved On intent in over 400 ms. Missing intent
+  and saved Off stay Off.
   Retain explicit startup Off and startup level/temperature settings; reject
   new On/Toggle startup policies and migrate old On/Toggle to Restore.
   Version-2 preset migration retains saved power and selected temperature at
@@ -204,7 +226,10 @@ ESP, and no independent output cutoff.
 - Keep I²C serialized with finite timeouts and explicit errors. On output failure,
   invalidate acknowledgement and attempt stock Off/OE release. Preserve intended
   state and the existing bounded recovery attempts that reinitialize, verify,
-  and reapply it. Recovery is not evidence of physical Off during the fault.
+  and fade valid On intent from verified zero. Recovery is not evidence of
+  physical Off during the fault. Verify exact physical-frame PWM, including
+  sub-minimum brightness. Quantized-equivalent frames retain readback without
+  redundant PWM writes or OE toggles; identical full frames need no I/O.
 - Recover Wi-Fi, AP, local-address, and Matter transport interruptions without
   discarding intent or commissioning. Radio operations have 30-second deadlines.
   Three consecutive internal driver errors, 60 seconds of failed RSSI queries
@@ -268,6 +293,10 @@ mapping, the level-57 regression points, single-light power/toggle/idempotent
 transitions, persistence migration, readback mismatch and bus failure, storage
 errors, startup policy, and recovery. Exercise standard Matter commands and
 reporting for the advertised level and temperature features.
+Cover zero endpoints, easing, independent axes, interrupted/reversed fades,
+linear Move, retained Off settings, unchanged Home targets, no per-frame flash
+writes, and zero-first restoration/recovery. Software checks do not establish
+how smooth the 8-bit low-light steps look on the actual panels.
 Verify pin modes and target/flash-fit checks for the C3.
 
 The physical acceptance sequence is:

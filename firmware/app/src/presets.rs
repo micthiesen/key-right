@@ -332,6 +332,17 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         mask: level::OptionsBitmap,
         over: level::OptionsBitmap,
     ) -> Result<(), Error> {
+        self.level_to_curve(raw, with_on_off, time_ds, mask, over, false)
+    }
+    fn level_to_curve(
+        &self,
+        raw: u8,
+        with_on_off: bool,
+        time_ds: Option<u16>,
+        mask: level::OptionsBitmap,
+        over: level::OptionsBitmap,
+        linear: bool,
+    ) -> Result<(), Error> {
         if raw == 255 {
             return Err(ErrorCode::ConstraintError.into());
         }
@@ -340,8 +351,12 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         }
         self.changed();
         let duration_ms = u64::from(time_ds.unwrap_or(0)) * 100;
-        self.runtime
-            .set_level_transition(raw, with_on_off, duration_ms)?;
+        if linear {
+            self.runtime.set_level_rate(raw, with_on_off, duration_ms)?;
+        } else {
+            self.runtime
+                .set_level_transition(raw, with_on_off, duration_ms)?;
+        }
         let options =
             (self.level_options.get().bits() & !mask.bits()) | (over.bits() & mask.bits());
         self.coupled_temperature.set(false);
@@ -350,10 +365,14 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
                 - (u16::from(raw.max(1)) - 1)
                     * (ColorTemperature::MAX.get() - ColorTemperature::MIN.get())
                     / 253;
-            self.runtime.set_temperature_transition(
-                ColorTemperature::new(mireds).expect("bounded temperature"),
-                duration_ms,
-            )?;
+            let temperature = ColorTemperature::new(mireds).expect("bounded temperature");
+            if linear {
+                self.runtime
+                    .set_temperature_rate(temperature, duration_ms)?;
+            } else {
+                self.runtime
+                    .set_temperature_transition(temperature, duration_ms)?;
+            }
             self.coupled_temperature.set(true);
         }
         if with_on_off && raw > Level::MIN.get() {
@@ -388,7 +407,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
             }
         };
         let ds = (u16::from(current.abs_diff(target)) * 10).div_ceil(u16::from(rate));
-        self.level_to(target, with_on_off, Some(ds), mask, over)
+        self.level_to_curve(target, with_on_off, Some(ds), mask, over, true)
     }
     pub fn level_step(
         &self,
@@ -471,7 +490,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         };
         self.changed();
         self.coupled_temperature.set(false);
-        self.runtime.set_temperature_transition(
+        self.runtime.set_temperature_rate(
             temperature(target),
             (u64::from(current.abs_diff(target)) * 1000).div_ceil(u64::from(rate)),
         )
@@ -1243,6 +1262,6 @@ pub async fn maintenance<K: KvBlobStoreAccess, H: Hardware>(
         }
         runtime.tick(now);
         feed();
-        Timer::after(Duration::from_millis(100)).await;
+        Timer::after(Duration::from_millis(20)).await;
     }
 }
