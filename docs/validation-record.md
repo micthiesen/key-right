@@ -10,16 +10,17 @@ evidence, controller acknowledgements, and observed light output.
 each with two persisted Home fabrics. Both fabrics loaded after board A's update.
 Preserve all of them.
 The first board passed the physical bench checks and controlled recovery tests
-below; Michael now reports successful overall operation of that lamp. The second
-board passed PCA register checks, saved-Off reboot and Home control checks.
-Michael confirmed Off held without a spinner after refreshing Home. The second
-board passed the final saved-Off check before assembly. Both assembled lamps
-worked well per Michael before board A was connected for its update. He reports
-faint orange glow near the centre while Off and powered. He confirms actual panel emission, also visible
-at the edges, and rules out the ESP indicator; optical darkness is unresolved.
+below. The second board passed PCA register checks, saved-Off reboot and Home
+control checks; Michael confirmed Off held without a spinner after refreshing
+Home. On September 29, he reports both closed-up lamps work well, with solid
+connections and no external antennas. This is current user experience, not a
+long-term radio result. He confirms faint panel emission while Off and rules
+out the ESP indicator. A resistor trial visibly dimmed it, but residual glow
+remains; disappearance after longer Off and the electrical cause are unresolved.
+The report does not confirm installed resistor values, count or endpoints.
 Probing is complete. Board A's 0.1.4 flash and saved-Off reboot passed below;
-visual fades and the resistor trial remain unverified. Board B awaits its update.
-Detailed loaded results and remaining limits are recorded per board below.
+visual fades, detailed loaded startup and long-outage recovery remain unverified.
+Board B awaits its update. Detailed results and limits are recorded below.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
 the error at the Key Light's U4 pads and confirmed the ESP end is correct. On
@@ -611,11 +612,13 @@ The ordinary flash path preserved NVS, with no erase or commissioning command.
 | Network after reboot | Wi-Fi connected at -56 dBm, local IP and IPv4 ready; one attempt, no timeouts/restarts |
 | Faults | Both settled checks: `fault=None`, zero output/storage failures and no output recoveries |
 
-Board A is left saved Off. The flash request did not report resistor installation
-or an optical result. No new meter probing, Home interaction, measured physical
-output, visual fade, cold-start darkness or closed-housing radio check was
+At the end of this flash session, board A was left saved Off. The flash request
+did not report resistor installation or an optical result. No new meter probing,
+Home interaction, measured physical output, visual fade, cold-start darkness
+or closed-housing radio check was
 performed. Existing Home fabrics are retained; visual control confirmation is
-still separate. Board B remains on 0.1.3.
+still separate. Board B remains on 0.1.3. Later user observations are recorded
+under the September 29 follow-up below.
 
 Private captures: `local/board-a-014-20260929.log` and
 `/tmp/key-right-board-a-014-flash.log`. Startup USB-log drops were reported;
@@ -645,16 +648,32 @@ leakage, residual drive and a conditional connector-bleeder trial. The earlier
 indicator hypothesis and masking plan are withdrawn. No new electrical
 measurement exists yet.
 
-The panels cannot be connected until reassembly. Reconnect with power removed,
-after the bench results support proceeding. No further routine probing is owed.
+### September 29 follow-up: assembled use and resistor trial
+
+After the board A update, Michael reported that the resistor trial made the
+panel glow visibly dimmer, but a faint glow remained. Whether it disappears
+completely after an extended period Off is unknown. He did not confirm the
+installed resistor values, count, endpoints or affected lamp in that report.
+The selected two-resistor plan in the investigation is therefore a proposal,
+not a verified installation record. No new current or waveform measurement
+establishes the cause or whether the remaining emission is steady or pulsed.
+
+Michael also reports that both lamps are closed up and functioning well with
+solid connections, without external antennas. This establishes his current
+experience in the assembled configuration. It does not establish long-term
+reliability, recovery from a long AP outage, detailed loaded startup behavior,
+closed-housing commissioning or the visual quality of 0.1.4's fades.
+
+The panels were reconnected for assembled use. For any future service, reconnect
+them with power removed. No further routine probing is owed.
 Record unloaded connector measurements separately from physical light results,
 including the firmware commit and actual observations. Tests with disconnected
 LEDs cannot establish the remaining loaded checks below.
 
 | Check | Observation |
 | --- | --- |
-| Firmware commit and LED reconnection date | Both were observed assembled on `b43e6bd` / 0.1.3 on September 29. Board A later updated to 0.1.4; post-update optical results pending |
-| Off after application initialization | Confirmed panel emission at centre, edges and other areas; ESP indicator ruled out; electrical cause unresolved |
+| Firmware commit and LED reconnection date | Both were observed assembled on `b43e6bd` / 0.1.3 on September 29. Board A later updated to 0.1.4; subsequent user report confirms both closed-up lamps work well, without detailed fade/startup checks |
+| Off after application initialization | Confirmed panel emission at centre, edges and other areas; ESP indicator ruled out. Resistor trial visibly dimmed it, but residual glow remains; extended-Off result and electrical cause unresolved |
 | Home low/high brightness, stock nominal 1%/10% limits | Pending |
 | Temperature minimum/maximum, 143/344 mired | Pending |
 | Initial level 57 and 303 mired, warm/cool raw PCA `6/2` | Pending |
@@ -664,7 +683,8 @@ LEDs cannot establish the remaining loaded checks below.
 | OE HIGH with `MODE2=0x14` and the actual external driver stage | Pending |
 | Cold power-up, MCU reset, and any startup flash | Pending |
 | Power-cycle persistence and intended/applied/output state agreement | Pending |
-| Installed antenna arrangement and closed-housing BLE/Apple Home pairing | Pending |
+| Installed antenna arrangement and closed-housing connection | Michael reports no external antennas and solid connections with both lamps closed up; long-term radio reliability unverified |
+| Closed-housing BLE/Apple Home pairing | Pending; earlier commissioning is recorded separately |
 | One Home light tile with power, brightness, and temperature per lamp | Pending |
 | Two separately paired lamps grouped in Home, shared brightness/temperature control | Pending; no simultaneous-output guarantee |
 | One grouped lamp offline while the other remains controllable | Pending |
@@ -673,10 +693,11 @@ LEDs cannot establish the remaining loaded checks below.
 
 Firmware 0.1.4 adds 400 ms eased physical transitions, true-zero fade endpoints,
 and separate target reporting. It is now installed on board A, with register
-and saved-Off reboot checks passed, but has not been visually checked on the
-panels. Software results belong in [software validation](software-validation.md).
-After reassembly, verify fades, target display and saved-Off reboot visually;
-keep the panel-glow investigation separate. Board B awaits its requested update.
+and saved-Off reboot checks passed, but its fades have not been visually checked
+on the panels. Software results belong in
+[software validation](software-validation.md). Specific visual checks of fades,
+target display and saved-Off reboot remain separate from the general report of
+successful operation and the glow trial. Board B awaits its requested update.
 Routine meter probing remains complete. Eight-bit PWM can still produce visible
 steps near minimum output.
 

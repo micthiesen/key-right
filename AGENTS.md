@@ -27,10 +27,9 @@ off for rework.
 `docs/hardware.md` owns the physical map; `docs/validation-record.md` owns
 per-board rework and testing status. Accept Michael's reported continuity and
 short checks; do not request them again without contradictory evidence.
-Michael considers the first board's bench probing complete. Proceed with
-firmware verification, unpowered reassembly, and loaded operation. The second
-board proceeds through chip/capacity preflight, flashing, and live tests without
-another routine meter-probing sequence; investigate wiring only if a fault appears.
+Michael considers both boards' routine bench probing complete. Both lamps are
+assembled and operating. Preserve completed checks; investigate wiring only if
+a fault appears.
 OE must be open-drain:
 set/release HIGH before enabling output mode, then drive LOW to enable the PCA.
 Preserve native USB on GPIO18/19; do not invent an antenna-selection GPIO.
@@ -48,14 +47,19 @@ worked well per Michael on 0.1.3, but have a faint central orange glow
 when Off and powered. Michael confirms emission from the actual LED panel,
 including the centre and edges, and rules out the ESP indicator. Do not repeat
 the withdrawn masking test. `docs/off-glow-investigation.md` owns the leakage/
-residual-drive investigation and conditional connector-bleeder trial. The
+residual-drive investigation and connector-bleeder trial. The
 electrical cause is unconfirmed; do not invent transistor pads or an OE pull-down.
 Board A, the first controller (`KR-88:56:a6:39:ec:f4`), was updated to 0.1.4 on
 2026-09-29. Both Home fabrics loaded, saved On restored, PCA verification passed,
 and a subsequent saved-Off reboot stayed at zero PWM with Wi-Fi/IP ready.
-It is left Off at remembered level 39 and 343 mired. Board B remains on 0.1.3.
-Visual fades, the resistor trial and detailed loaded startup remain unverified;
-do not turn those limits into requests to repeat completed probing.
+The last console check left it Off at remembered level 39 and 343 mired. Board B
+remains on 0.1.3. Later on September 29, Michael reports both closed-up lamps work
+well with solid connections and no external antennas. This is current user
+experience, not a long-term radio result. The resistor trial visibly dimmed the
+panel glow, but residual glow remains; whether it disappears after longer Off
+is unknown. The exact installed resistor values, count and endpoints were not
+confirmed in that report. Visual fades, detailed loaded startup and long-outage
+recovery remain unverified; do not repeat completed probing.
 Both installed boards report 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 

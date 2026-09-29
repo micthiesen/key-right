@@ -17,10 +17,12 @@ The firmware uses the C3's native USB Serial/JTAG peripheral.
 On **2026-09-28**, Michael completed the wiring and powered the assembly from a
 13 V bench supply, measuring 3.345 V at ESP `3.3`/`G`. USB identified an ESP32-C3
 revision v0.4 with 4 MiB flash. The original image was backed up and real
-firmware flashed. The panels were disconnected for bench work. Michael now
-reports successful overall operation of the first lamp; the second board has
-passed register checks and joined Home, with loaded operation still pending.
-Per-board results are in [the validation record](validation-record.md).
+firmware flashed. The panels were disconnected for bench work. On September 29,
+Michael reports both closed-up lamps work well without external antennas, with
+solid connections in his current use. Board A runs 0.1.4; board B remains on
+0.1.3. This does not establish long-term radio reliability or detailed loaded
+startup behavior. Per-board results are in
+[the validation record](validation-record.md).
 
 Retain the PCA9635 U3, stock LED power/current-limiting circuitry, LED panels,
 housing, and original 13 V / 4 A supply. No PCA pin is lifted. The rocker has
@@ -125,8 +127,9 @@ and the physical checks.
 The handoff reports both an onboard antenna component and an external antenna
 socket visible in the board photos. Antenna routing/selection is hardware; there
 is no established firmware antenna-selection GPIO. Do not add one by analogy
-with another board. Record the installed antenna arrangement and test BLE and
-Wi-Fi in the closed housing before claiming radio performance.
+with another board. On September 29, Michael confirms no external antennas are
+installed and reports solid connections with both lamps closed up. This is a
+user observation, not a long-term radio or closed-housing commissioning test.
 
 ## USB and power sequence
 
@@ -141,11 +144,11 @@ five lamp wires**. Remove USB before restoring those wires. This rule applies
 to flashing, console use, recovery, and bench testing alike. Do not rely on USB
 back-powering the stock board.
 
-For the upcoming bench session, leave the LED panels disconnected, verify the
+For a future bench session, leave the LED panels disconnected, verify the
 bench-supply connection and polarity, and record the chosen voltage and current
 limit before energizing the assembly. The reported lamp input is 13 V; no
-bench-PSU current limit or loaded-supply result has yet been supplied. A bench
-pass requires actual observations, not the wiring-complete report alone.
+bench-PSU current limit or loaded-supply measurement has yet been supplied.
+Completed bench checks are in the validation record and need not be repeated.
 
 ## Controller evidence and physical limits
 
@@ -153,10 +156,10 @@ pass requires actual observations, not the wiring-complete report alone.
 following software baseline. These remain firmware evidence, not measurements
 of the modified assembly:
 
-| Item | Stock-firmware evidence | Physical check still needed |
+| Item | Stock-firmware evidence | Physical evidence or remaining check |
 | --- | --- | --- |
-| Address and bus rate | Seven-bit `0x15`, 100 kHz | Communication with this wired PCA |
-| Active channels | LED0/warm on pin 6; LED4/cool on pin 10 | Visible bank/output behavior once the LEDs are connected |
+| Address and bus rate | Seven-bit `0x15`, 100 kHz | Both wired boards passed PCA writes/readback; bus timing unmeasured |
+| Active channels | LED0/warm on pin 6; LED4/cool on pin 10 | Detailed connected-panel bank/output checks remain unrecorded |
 | Output mode | `MODE2=0x14`: inverted push-pull, update on STOP, OE-high outputs LOW | External-stage behavior and actual Off |
 | 3300 K, nominal 3% | Warm/cool raw PCA PWM values `6/2` | Output observation; these are not optical calibration |
 | 5000 K, nominal 3% | Warm/cool raw PCA PWM values `3/6` | Output observation; these are not optical calibration |
@@ -181,8 +184,11 @@ Both assembled lamps now operate well per Michael, but have a faint central
 orange glow while Off and powered. Michael confirms that the panel itself
 emits it, including at the edges, and rules out the ESP indicator. See the
 [glow investigation](off-glow-investigation.md) for the leakage/residual-drive
-assessment, verified connector locations and conditional bleeder trial. No PCA
-polarity change, OE pull-down or unverified gate connection is selected.
+assessment and verified connector locations. Michael's September 29 resistor
+trial visibly dimmed the glow, but residual emission remains. Whether it goes
+fully dark after longer Off is unknown; the cause is still unconfirmed. His
+report does not confirm the installed resistor values, count or endpoints.
+No PCA polarity change, OE pull-down or unverified gate connection is selected.
 
 ## Evidence provenance
 

@@ -16,18 +16,21 @@ scenes. Grouping does not guarantee simultaneous output. Stock firmware evidence
 defines PCA commands, not measured brightness or Kelvin, and low-output steps
 are limited by eight-bit PWM quantization.
 
-Both assembled lamps run **0.1.3** and Michael reports they work well. Bench
-probing is complete. A faint orange glow near the centre while Off is under
-[investigation](docs/off-glow-investigation.md). Michael confirms that the panel
-LEDs emit it and rules out the ESP indicator. The electrical cause remains
-unresolved; register-zero Off does not establish optical darkness.
+On September 29, Michael reports that both closed-up lamps work well and have a
+solid connection without external antennas. This is his current experience,
+not a long-term reliability result. Bench probing is complete. A resistor trial
+visibly reduced the faint orange panel glow while Off, but residual glow remains.
+Whether it disappears after longer Off is unknown. Its electrical cause remains
+under [investigation](docs/off-glow-investigation.md); zero PWM does not establish
+optical darkness.
 
-**0.1.4 is prepared for the next planned reflash, not installed.** It adds
+Board A runs **0.1.4**; board B remains on **0.1.3**. Version 0.1.4 adds
 400 ms eased power, brightness and temperature transitions while Home continues
-to report selected targets immediately. Physical fades reach zero; intermediate
-frames never write flash. Low-output steps remain limited by the PCA's 8-bit
-resolution. The [validation record](docs/validation-record.md) distinguishes
-installed-image results from checks still pending on the new image.
+to report selected targets immediately. Output-frame fades reach zero;
+intermediate frames never write flash. Visual fades and detailed loaded startup
+remain unverified. Low-output steps remain limited by the PCA's 8-bit resolution.
+The [validation record](docs/validation-record.md) separates installed-image
+results, user observations and remaining checks.
 
 The Rust application targets `esp32c3`. The [spec](docs/spec.md) records the
 single-light control contract. Build results and pending checks are recorded in

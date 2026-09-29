@@ -15,7 +15,11 @@ identify which of the four output connectors is affected.
 Firmware **0.1.4 was flashed to board A on September 29**; board B remains on
 0.1.3. Board A passed settled-Off PCA checks and a saved-Off reboot. Its animation
 change retains 0.1.3's settled-Off configuration and is not a demonstrated glow
-fix. Resistor installation and its optical result have not yet been reported.
+fix. Later on September 29, Michael reports that the resistor trial visibly
+dimmed the panel glow, but residual glow remains. Whether it disappears after
+longer Off is unknown. His report does not confirm the installed values, count
+or endpoints; the plan below is not an installation record. The electrical
+cause remains unconfirmed.
 
 ## Evidence and limits
 
@@ -68,14 +72,14 @@ service, read `status`, `registers` and `verify` after Off has settled. If they
 show nonzero PWM, a fault or repeated resets, investigate that before adding a
 component. Correct registers establish the commanded state only.
 
-## Electrical candidate to prepare
+## Bleeder trial and partial result
 
 A **bleeder resistor across an affected LED load** can provide an alternate
 path for a small off-state current and reduce voltage across the LEDs. This is
-a candidate to test, not a proven repair. It cannot correct a power stage that
-is being substantially driven On.
+consistent with the reported reduction, but does not establish the cause or a
+complete repair. It cannot correct a power stage that is substantially driven On.
 
-### Selected first trial: the two warm outputs
+### Original trial plan: the two warm outputs
 
 The [one-page field guide](field-guides/off-glow/key-right-resistor-trial.pdf)
 circles both connectors and enlarges their electrical contacts, with a short
@@ -129,7 +133,9 @@ would require a different diagnosis. This distinction is described in
 [Nexperia AN90009, §§2.1–2.2](https://assets.nexperia.com/documents/application-note/AN90009.pdf).
 It does not identify the transistor types or current path in these lamps.
 
-At the next planned opening:
+The original trial procedure is retained below for reference. Michael has since
+reported a partial result; this is not a request to repeat it or install more
+resistors. The actual installed parts and endpoints remain unrecorded.
 
 1. Follow the [existing power/USB rules](hardware.md) and read the settled-Off
    console state. No new work is requested while the lamps remain assembled.

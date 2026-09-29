@@ -23,10 +23,12 @@ after the resets; once its subscription returned, the final target/Off check
 passed. On 0.1.3, the second board passed real PCA readback, saved-Off reboot,
 Home commissioning and the final Home control/Off check. Its
 idle spinner cleared after restarting Home. Michael now reports that both
-assembled lamps work well, with a faint orange glow near the centre while Off
-and powered. He confirms that the LED panel itself emits it, including at the
-edges, and rules out the ESP indicator. The electrical cause and optical
-darkness are unresolved; see the
+closed-up lamps work well without external antennas and have solid connections
+in his current use. This does not establish long-term radio reliability.
+A faint orange glow remains while Off and powered. He confirms that the panel
+itself emits it, including at the edges, and rules out the ESP indicator. A
+September 29 resistor trial visibly reduced it, but whether it goes fully dark
+after longer Off is unknown. The electrical cause remains unresolved; see the
 [Off-glow investigation](off-glow-investigation.md). Loaded startup, detailed
 optical behavior and two-lamp grouping remain unverified.
 The [physical validation record](validation-record.md) owns per-image results,
@@ -35,9 +37,10 @@ including the rejected intermediate builds.
 Firmware **0.1.4 / software version 5** adds smooth output transitions. Board A
 (`KR-88:56:a6:39:ec:f4`) was updated on September 29 and passed saved-state,
 PCA readback and saved-Off reboot checks; both Home fabrics loaded and Wi-Fi/IP
-returned. Board B remains on 0.1.3. Visual transitions and the resistor trial
-remain unverified. Preserve both lamps' existing fabrics and intent; do not
-repeat completed routine meter probing.
+returned. Board B remains on 0.1.3. Visual transitions remain unverified; the
+resistor report does not confirm installed values, count or endpoints. Preserve
+both lamps' existing fabrics and intent; do not repeat completed routine meter
+probing.
 
 The firmware target is `esp32c3`, using `riscv32imc-unknown-none-elf`. Software
 validation and physical acceptance are separate; passing build gates does not
@@ -62,7 +65,7 @@ lamp design, not a general channel-discovery or calibration platform.
 | ESP board | `ESP32-C3_MINI_V1`, target `esp32c3` | Read chip identity and flash capacity before writing; plan for 4 MiB, no PSRAM |
 | Power and signal wiring | Corrected U4 map in hardware.md; first-board continuity/short checks reported complete; ESP assignments unchanged | Do not repeat routine probing; investigate a new fault if one appears |
 | PCA address and bus | Seven-bit `0x15`, 100 kHz; first-board writes/readback passed | Bus timing is not measured by register readback |
-| Output configuration | Stock `MODE2=0x14`; LED0/warm drives F connectors and LED4/cool drives W connectors in unloaded checks | Connected-panel colour, brightness and startup remain unobserved |
+| Output configuration | Stock `MODE2=0x14`; LED0/warm drives F connectors and LED4/cool drives W connectors in unloaded checks | Detailed connected-panel colour, brightness and startup checks remain unrecorded |
 | Brightness range | Stock nominal 1% through 10%, mapped across Home's nonzero brightness range | Stock scale, not measured optical brightness or raw electrical PWM duty |
 | Temperature range | Stock 143 through 344 mired, approximately 6993 through 2907 K | Command range, not optical calibration |
 | Initial level | Matter level `57`, approximately Home 22% and stock nominal 3% | Preserve raw warm/cool `6/2` at 303 mired and `3/6` at 200 mired |
