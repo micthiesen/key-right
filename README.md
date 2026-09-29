@@ -16,9 +16,9 @@ scenes. Grouping does not guarantee simultaneous output. Stock firmware evidence
 defines PCA commands, not measured brightness or Kelvin, and low-output steps
 are limited by eight-bit PWM quantization.
 
-**Signal wiring needs correction; the LEDs remain disconnected.** Michael found
-the field guide's data-line map wrong. Its physical connection instructions are
-withdrawn pending a corrected, continuity-checked map in [hardware.md](docs/hardware.md).
+**U4 signal rewiring is in progress; the LEDs remain disconnected.** Michael
+supplied the corrected Key Light pad map in [hardware.md](docs/hardware.md) and
+confirmed the ESP ends are correct. Both boards' rework and checks are pending.
 On 2026-09-28, the wired assembly powered from the 13 V bench supply,
 Michael measured 3.345 V
 at the ESP, and USB identified an ESP32-C3 with 4 MiB flash. The original flash

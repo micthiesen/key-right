@@ -7,10 +7,11 @@ completed on 2026-09-28.
 Record each actual result and remaining check in
 [the validation record](validation-record.md); this guide is the procedure.
 
-**Wiring correction required:** Michael found the field guide's signal map
-incorrect during bench testing. Keep bench power off and USB unplugged while
-rewiring. The powered steps below apply only after the corrected SDA/SCL/OE map
-and complete-path continuity have been recorded in [hardware.md](hardware.md).
+**U4 rewiring in progress:** Michael supplied the corrected signal map in
+[hardware.md](hardware.md): top-row OE is fifth from left, SCL rightmost, and
+SDA second from right. The ESP ends remain correct. Keep bench power off and
+USB unplugged while moving the U4 wires on both boards. The powered steps below
+follow rework completion and complete-path continuity checks.
 The [component-side C3 photo](references/photos/esp32-c3-mini-v1.png) identifies
 the connector and buttons visually; it does not prove antenna routing or
 electrical wiring.
@@ -21,9 +22,8 @@ electrical wiring.
 - Check power and ground: J6/DEBUG regulated supply to `3.3`, J8/UART ground
   to `G`; do not connect `5V`. Establish the corrected SDA/SCL/OE paths from the
   actual printed ESP GPIO labels to PCA pins 27/26/23 with power removed.
-  Current firmware uses GPIO4/5/6 respectively; reconcile that configuration
-  with the corrected wiring before power-up. Do not reuse the withdrawn row
-  positions in the earlier field guide.
+  Current firmware uses GPIO4/5/6 respectively and the ESP ends stay in place.
+  Use the corrected U4 map above, not the earlier field guide's pad positions.
 - Connect the bench PSU only to the stock lamp input with the confirmed
   polarity. The nominal input is **13 V**. Never put 13 V on a C3 pad.
   Use the bench PSU as the lamp's input source, with the ordinary adapter

@@ -25,10 +25,11 @@ establish correct wiring, USB power isolation, or physical lamp behavior.
 
 Keep the existing Rust architecture and compatible Stillair-derived Matter
 dependency set. The September 28 handoff supplies the actual board identity,
-initial five-wire map, and user measurements. The signal map was withdrawn after
-Michael found the field guide's data-line connections incorrect during bench
-testing; corrected connection points are pending. The user selected one light
-per lamp, Home grouping, and a low-light range capped at stock nominal 10%.
+initial five-wire map, and user measurements. Michael corrected the field guide's
+U4 signal-pad positions during bench testing; the ESP end remains correct.
+[hardware.md](hardware.md) owns the corrected map, with rewiring in progress.
+The user selected one light per lamp, Home grouping, and a low-light range
+capped at stock nominal 10%.
 [Signed stock-firmware analysis](references/firmware-analysis.md) remains the
 basis for the PCA configuration and warm/cool mixing. This is a single known
 lamp design, not a general channel-discovery or calibration platform.
@@ -36,7 +37,7 @@ lamp design, not a general channel-discovery or calibration platform.
 | Item | Project requirement or evidence | Remaining limit |
 | --- | --- | --- |
 | ESP board | `ESP32-C3_MINI_V1`, target `esp32c3` | Read chip identity and flash capacity before writing; plan for 4 MiB, no PSRAM |
-| Power and signal wiring | Five-wire interface; signal connection map withdrawn pending correction | Correct and continuity-check signal wiring before powered tests; radio-load rail behavior unverified |
+| Power and signal wiring | Five-wire interface with corrected U4 pad map in hardware.md; ESP assignments unchanged | Finish and continuity-check both boards' rework before powered tests; radio-load rail behavior unverified |
 | PCA address and bus | Seven-bit `0x15`, 100 kHz, from stock firmware | Physical I²C acknowledgement/readback pending |
 | Output configuration | Stock `MODE2=0x14`; individual PWM; LED0 warm, LED4 cool | Physical bank response and off-state pending |
 | Brightness range | Stock nominal 1% through 10%, mapped across Home's nonzero brightness range | Stock scale, not measured optical brightness or raw electrical PWM duty |
@@ -90,19 +91,17 @@ RESET buttons and a bare ESP32-C3 package. It is not an official
 `ESP32-C3-MINI-1U` module. Its printed pad numbers are GPIO numbers, not board
 `D` aliases. Do not assume a firmware antenna-selection pin on this board.
 
-The physical connection map is owned by [hardware.md](hardware.md). Its SDA/SCL/OE
-pad positions are withdrawn following the reported field-guide error. Current
-firmware still assigns SDA to GPIO4, SCL to GPIO5, and OE to GPIO6; those
-assignments do not establish where the wires are actually connected. Verify the
-corrected complete paths to PCA pins 27/SDA, 26/SCL, and 23/OE with power removed
-before resuming powered tests. Revise firmware pin assignments if the corrected
-wiring requires it.
+The physical connection map is owned by [hardware.md](hardware.md), including
+Michael's corrected U4 pad positions. He confirmed the ESP end is correct:
+SDA remains GPIO4, SCL GPIO5, and OE GPIO6. No firmware pin change is required.
+Verify the reworked complete paths to PCA pins 27/SDA, 26/SCL, and 23/OE with
+power removed before resuming powered tests.
 
 The reported measurements are 13 V input, 3.37 V PCA VDD and idle SDA/SCL/OE,
 approximately 9.9 kΩ from each signal to VDD, approximately 20 kΩ SDA-to-SCL,
 approximately 1 kΩ unpowered VDD-to-GND, and approximately 0–0.1 Ω continuity
 from each selected signal pad to its PCA pin. These are historical reports,
-not proof of the now-disputed signal map. Retain the existing pull-ups and use
+not verification of the corrected wiring. Retain the existing pull-ups and use
 100 kHz; radio-load power stability remains unverified. Provenance is recorded
 in [hardware.md](hardware.md) and the [validation record](validation-record.md).
 

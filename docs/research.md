@@ -53,8 +53,9 @@ Chip-level reference only, not a finalized board wiring instruction:
 
 The September 28 handoff reports 3.37 V idle levels with approximately 9.9 kΩ
 signal-to-VDD resistance, supporting retention of the existing pull-ups. Its
-selected SDA/SCL/OE pad map was later contradicted by Michael's bench inspection
-and is withdrawn pending corrected end-to-end measurements. Firmware
+selected SDA/SCL/OE pad map was later corrected by Michael's bench inspection.
+[hardware.md](hardware.md) records his corrected U4 positions; post-rework
+end-to-end checks remain pending. Firmware
 emulation establishes LED0/warm and LED4/cool, address `0x15`, stock I²C setup,
 and `MODE2=0x14`; physical readback and LED behavior are still pending.
 
@@ -67,8 +68,8 @@ transcribes the user's probing worksheet and final C3 wiring guide. It identifie
 the board as `ESP32-C3_MINI_V1`, maps GPIO4/5/6 to SDA/SCL/OE, and records direct
 power from J6's 3.37 V rail. The worksheet and named C3 PDF are not stored here;
 the historical readings are retained in [validation-record.md](validation-record.md).
-Michael later found the guide's signal connections incorrect. The old physical
-map is withdrawn; [hardware.md](hardware.md) tracks its correction. LEDs remain
+Michael later corrected the guide's U4 pad positions and confirmed the ESP end
+was correct; [hardware.md](hardware.md) owns the revised map. LEDs remain
 disconnected during rewiring and bench work.
 
 The [ESP32-C3 datasheet](https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf)

@@ -224,12 +224,14 @@ control candidate remain software/datasheet-derived evidence, not continuity
 measurements. Do not translate module pin numbers into physical pad positions
 from this binary or the photographs alone.
 
-The later September 28 user worksheet resolves the selected physical connections,
-3.37 V bus/rail readings, and approximately 9.9 kΩ pull-ups. Use its U4 row-based
-map in [hardware.md](../hardware.md). The [validation record](../validation-record.md)
-preserves those measurements and completed wiring status; ESP/PCA operation,
-radio-load rail stability, cold start, and LED output remain pending. Later user
-measurements do not change what this offline analysis itself established.
+The later September 28 handoff reports 3.37 V bus/rail readings and approximately
+9.9 kΩ pull-ups. Michael subsequently corrected its U4 signal-pad map; use his
+correction in [hardware.md](../hardware.md). The
+[validation record](../validation-record.md) records the successful C3 flash and
+USB console, failed PCA acknowledgement before rewiring, and pending rework of
+both boards. Radio-load rail stability, physical light startup, and LED output
+remain unverified. Later observations do not change what this offline analysis
+itself established.
 
 ## Other research and observation limits
 
@@ -252,8 +254,9 @@ measurements do not change what this offline analysis itself established.
 
 The installed C3 path removes only the Realtek module and retains the PCA9635.
 Firmware currently assigns GPIO4/5/6 to SDA/SCL/active-low OE. Michael found the
-field guide's signal connections incorrect; [hardware.md](../hardware.md) tracks
-the corrected map, which is still pending. PCA pins 6/10 stay in place, and LEDs
+field guide's U4 signal connections incorrect and supplied the corrected map in
+[hardware.md](../hardware.md). The ESP end is correct; rework of both boards is
+in progress. PCA pins 6/10 stay in place, and LEDs
 remain disconnected. Physical light startup/fault behavior remains untested. The current
 single-light brightness/temperature contract is in [the spec](../spec.md);
 the analysis above retains its original stock-firmware evidence and date.

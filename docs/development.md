@@ -7,9 +7,9 @@ simulator, and a separate ESP32-C3 Matter workspace for the installed
 **ESP32-C3_MINI_V1**. The wired assembly has powered up and received the real
 firmware, with the LEDs disconnected. USB diagnostics work; after the PCA
 acknowledgement failure, Michael found the field guide's signal wiring wrong.
-Corrected connections are pending in [hardware.md](hardware.md); see
-[the validation record](validation-record.md) for
-results.
+The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged
+and both boards' rework is pending. See
+[the validation record](validation-record.md) for results.
 
 The board configuration is:
 

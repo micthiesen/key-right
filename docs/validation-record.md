@@ -5,11 +5,12 @@ This record covers Michael's original full-size Elgato Key Light and its wired
 credentials out of this file. Distinguish reported measurements, firmware
 evidence, controller acknowledgements, and observed light output.
 
-**Current wiring correction:** after the bus voltage checks, Michael reported
-that the field guide was wrong and all data-line connections need fixing.
-Corrected SDA/SCL/OE points and which board end was wrong are pending. The prior
-signal map is withdrawn; earlier continuity reports do not validate the present
-wiring. Powered tests must wait for the corrected map and end-to-end checks.
+**Current wiring correction:** after the bus voltage checks, Michael identified
+the error at the Key Light's U4 pads and confirmed the ESP end is correct. On
+U4's top row, OE is pad 5 counting from 1 at the left, SCL is rightmost, and SDA
+is second from right. ESP GPIO4/SDA, GPIO5/SCL, and GPIO6/OE remain unchanged.
+He is changing both boards; completion and post-rework continuity are pending.
+The results below precede that rework unless explicitly marked otherwise.
 
 ## Reported baseline, 2026-09-28
 
@@ -60,6 +61,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | Check or session detail | Result |
 | --- | --- |
 | Date, operator, stock-board revision | 2026-09-28; Michael operating the bench, agent inspecting macOS/serial; stock-board revision not supplied |
+| U4 signal-wiring correction | Michael reports OE = top-row pad 5 from left (1-based), SCL = rightmost, SDA = second from right; ESP ends correct. Rework planned for both boards; completion, continuity, and post-rework PCA tests pending |
 | C3 chip identity and detected flash ID/capacity | ESP32-C3 revision v0.4, 40 MHz crystal, 4 MiB flash detected by espflash; raw flash ID was not printed |
 | C3 firmware commit, build target, image/partition fit | Current real `hardware-light` image is `ec1cff9`, `riscv32imc-unknown-none-elf`; 1,914,272 / 4,063,232 app-partition bytes, linked stack 57,912 bytes; both software gates and both image-fit checks passed. Initially flashed `fb241df` before the arena fix |
 | Read-only serial inspection and flash-helper preflight | Passed `sh scripts/flash.sh --info /dev/cu.usbmodem1101`; no flash write. macOS identified Espressif USB VID `0x303a`, PID `0x1001`, 12 Mb/s. Holding BOOT, tapping RESET, then releasing BOOT exposed USB and produced the accessory prompt |
