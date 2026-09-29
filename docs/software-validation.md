@@ -57,6 +57,20 @@ Software checks establish implementation behavior and image buildability. They
 do not establish successful flashing, GPIO voltage levels, rail stability,
 light output, Apple Home behavior, or network recovery on the installed assembly.
 
+## 2026-09-28 USB detection watcher
+
+Both software gates passed again after adding `scripts/usb-watch.py`: 26 core/CLI
+Rust tests, 36 application host tests, and 28 Python tests. The 15 new watcher
+tests cover failed inventory reads, connection changes, quiet terminal output,
+private full-detail captures, and log-process cleanup. No firmware was changed.
+
+Live macOS checks passed for timed capture and Ctrl-C shutdown, including
+termination of the background log process. The terminal showed existing
+USB-C/accessory connections without JSON or idle-timer noise. Detailed registry
+snapshots and system logs were saved under ignored `local/` directories. No ESP
+USB device was present, so a physical ESP attachment event remains untested;
+these checks do not establish post-rework USB or PCA operation.
+
 ## Stock-firmware evidence
 
 On 2026-09-23, offline emulation of the signed original firmware reproduced

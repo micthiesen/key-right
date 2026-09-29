@@ -5,8 +5,9 @@
 Key Right contains a portable `no_std` control/PCA9635 core, an in-memory host
 simulator, and a separate ESP32-C3 Matter workspace for the installed
 **ESP32-C3_MINI_V1**. The wired assembly has powered up and received the real
-firmware, with the LEDs disconnected. USB diagnostics work; after the PCA
-acknowledgement failure, Michael found the field guide's signal wiring wrong.
+firmware, with the LEDs disconnected. USB diagnostics worked before rework;
+after the PCA acknowledgement failure, Michael found the field guide's signal
+wiring wrong. USB detection is currently absent after the first board's rework.
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 
@@ -33,6 +34,7 @@ programmed disabled state; it is not an independent safety interlock.
 | `firmware/app/src/main.rs` | Same runtime/Matter/console with simulated output |
 | `firmware/app/host-tests` | Application control and Matter logic with mock hardware/storage |
 | `scripts/device.py` | Native USB console client for Python 3 on macOS/Linux |
+| `scripts/usb-watch.py` | Read-only macOS USB/USB-C/accessory and serial-event capture |
 
 Each lamp exposes one Matter Color Temperature Light (device type `0x010C`).
 On/Off, Level Control, and temperature-only Color Control provide one ordinary
@@ -61,9 +63,9 @@ sh scripts/check-firmware.sh
 ```
 
 The host gate checks formatting, strict Clippy, Rust tests, simulator behavior,
-and the Python console/flash helpers. The firmware gate runs application host
-tests, formatting and Clippy, release builds for the real and simulated C3
-images, and a minimum 16 KiB linked main-stack check.
+and the Python console, flash, and USB watcher helpers. The firmware gate runs
+application host tests, formatting and Clippy, release builds for the real and
+simulated C3 images, and a minimum 16 KiB linked main-stack check.
 These gates require no board or credentials. Use `cargo fmt --all` at the root
 and `cargo fmt` inside `firmware/app`. Record actual gate outcomes in
 [software validation](software-validation.md).
@@ -107,8 +109,8 @@ alone does not isolate the rail or signal paths.
 
 Keep the LEDs disconnected for initial work. Verify input polarity and record
 the bench PSU voltage/current limit; nominal 13 V goes only to the stock lamp
-input. Bench power under radio load and USB communication have not yet been
-verified. Record them in [the validation record](validation-record.md).
+input. Bench power under radio load and post-rework USB communication remain
+unverified. Record them in [the validation record](validation-record.md).
 
 Follow [bench bring-up](bench-bring-up.md) for the ordered first-power,
 read-only chip inspection, preflight, flash, and probing sequence. Install the
@@ -128,6 +130,39 @@ devices. Validate BOOT/RESET native USB recovery on this board during bring-up.
 The [Espressif USB guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/api-guides/usb-serial-jtag-console.html)
 describes the chip's fixed Serial/JTAG function; this project retains its Rust
 USB implementation rather than switching to ESP-IDF or TinyUSB.
+
+### USB detection watcher (macOS)
+
+If no serial port appears, run this before trying the cable, Mac ports, or
+BOOT/RESET:
+
+```sh
+python3 scripts/usb-watch.py
+```
+
+The terminal shows short connection/disconnection messages, serial paths,
+meaningful USB-C/port-state changes, and errors. Existing connections are marked
+`BASELINE`. No JSON or macOS debug-log stream is printed, and idle port timers,
+built-in serial nodes, and duplicate `/dev/tty.*` nodes stay quiet. It does not
+open serial devices, reset the ESP, or write flash. Keep the existing lamp-power
+and VBUS-blocked USB arrangement during diagnosis.
+
+Stop with **Ctrl-C**. The printed `local/usb-watch-*` directory contains
+`events.log` (terminal output), `snapshots.jsonl` (detailed changed inventories,
+with bookkeeping/idle timers omitted), and `macos.log` (raw system-log output).
+The inventories include USB devices, interfaces, host ports, USB-C/accessory
+state, serial drivers, and both `/dev/cu.*` and `/dev/tty.*` nodes, including
+details hidden from the terminal. Captures are private to the current user,
+Git-ignored, and may include hardware serial numbers.
+
+The default polling interval is 0.5 seconds; very brief changes may be missed.
+System-log visibility depends on macOS, and no events does not prove an
+electrically inactive cable. Errors remain visible and do not count as device
+removals. If macOS denies access to its log stream, registry monitoring continues;
+rerunning with `sudo` can expose more logs. Use `--no-system-log` for registry-only
+capture, `--duration 30` for a timed capture, or `--help` for other options.
+
+### Flash helper
 
 The flash helper supports these separate operations:
 

@@ -58,6 +58,20 @@ Connect the VBUS-blocked USB data/ground path. List ports before any flash write
 python3 scripts/device.py --list
 ```
 
+If the ESP is absent, start the read-only macOS watcher before trying reconnects
+or BOOT/RESET:
+
+```sh
+python3 scripts/usb-watch.py
+```
+
+It shows concise USB-C/accessory and USB device changes even when no serial port
+exists, saving detailed inventories and macOS logs to files. Ctrl-C stops and
+leaves the capture in the printed `local/usb-watch-*` folder. Keep the same
+power/VBUS isolation arrangement. See
+[watcher details](development.md#usb-detection-watcher-macos) for capture contents
+and limits. Continue with chip identification only after a serial port appears.
+
 Replace `PORT` in subsequent commands with the returned C3 serial device, such
 as `/dev/cu.usbmodem...`. Close other serial monitors. Inspect the connected chip:
 
