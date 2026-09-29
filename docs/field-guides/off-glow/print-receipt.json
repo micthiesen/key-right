@@ -1,0 +1,28 @@
+{
+  "pdf": "key-right-resistor-trial.pdf",
+  "sha256": "2a614bb47a66ab01455b318d31a818ea07022343183b85bb99d99dca9dafc250",
+  "source_revision": "c824aa84b53dbef820427663ea4634eb7ebd2692",
+  "pages": 1,
+  "printer_model": "Brother HL-L2370DW",
+  "delivery_url": "https://raw.githubusercontent.com/micthiesen/key-right/c824aa84b53dbef820427663ea4634eb7ebd2692/docs/field-guides/off-glow/key-right-resistor-trial.pdf",
+  "delivery_bytes_verified": true,
+  "review": "All-page grayscale render and enlarged contact views visually inspected; PDF labels, source hashes and one-page Letter dimensions verified. Both project check scripts passed.",
+  "attempts": [
+    {
+      "prepared_at": "2026-09-29T17:39:32Z",
+      "job_name": "Key Right resistor guide 2a614bb47a66",
+      "copies": 1,
+      "paper": "letter",
+      "sides": "one-sided",
+      "submission_state": "completed",
+      "accepted": true,
+      "completed": true,
+      "job_id": 236,
+      "job_state": "completed",
+      "impressions_completed": 1,
+      "completion_observed_at": "2026-09-29 17:40:35 UTC",
+      "completion_evidence": "Executor print_document: The printer completed the job successfully",
+      "physical_paper_inspected": false
+    }
+  ]
+}
