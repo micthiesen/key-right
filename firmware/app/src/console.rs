@@ -13,6 +13,7 @@ pub async fn run<K: KvBlobStoreAccess, H: Hardware>(
     mut rx: UsbSerialJtagRx<'static, Async>,
     runtime: &Runtime<K, H>,
     pairing: &str,
+    pairing_qr: &str,
     open_commissioning: impl Fn() -> Result<(), rs_matter_embassy::matter::error::Error>,
 ) -> ! {
     let mut line = String::<256>::new();
@@ -59,6 +60,7 @@ pub async fn run<K: KvBlobStoreAccess, H: Hardware>(
                         line.as_str(),
                         runtime,
                         pairing,
+                        pairing_qr,
                         &open_commissioning,
                         &mut reply,
                     );
@@ -77,6 +79,7 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
     line: &str,
     runtime: &Runtime<K, H>,
     pairing: &str,
+    pairing_qr: &str,
     open_commissioning: &impl Fn() -> Result<(), rs_matter_embassy::matter::error::Error>,
     out: &mut String<1024>,
 ) {
@@ -151,16 +154,18 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             temperature: Preset::Two.temperature(),
             ..LightState::default()
         }),
-        ("commissioning", [Some("code"), None, None]) => {
+        ("commissioning", [Some(format @ ("code" | "qr")), None, None]) => {
             if let Err(e) = open_commissioning() {
                 let _ = write!(out, "KR ERR commissioning_window_{:?}", e.code());
+            } else if format == "qr" {
+                let _ = write!(out, "KR OK qr_payload={pairing_qr}");
             } else {
                 let _ = write!(out, "KR OK pairing_code={pairing}");
             }
             return;
         }
         _ => {
-            let _=out.push_str("KR ERR commands=status|off|on|level_1..254|temperature_143..344|on_1_or_2|verify|registers|commissioning_code|reboot|test_watchdog");
+            let _=out.push_str("KR ERR commands=status|off|on|level_1..254|temperature_143..344|on_1_or_2|verify|registers|commissioning_code|commissioning_qr|reboot|test_watchdog");
             return;
         }
     };

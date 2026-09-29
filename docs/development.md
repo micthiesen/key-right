@@ -205,8 +205,32 @@ bench testing uses the real-output image with LEDs disconnected; `bench-light`
 is a separate software simulation and cannot test the PCA.
 
 Each uncommissioned boot opens a 15-minute pairing window. The explicit USB
-`commissioning code` command can open the window and return the stable code.
-Commissioning uses that code in Apple Home; no online QR service is required.
+`commissioning code` and `commissioning qr` commands can reopen the window and
+return the existing stable credential as a manual code or standard Matter QR
+payload. Both commands reject a device that already has a fabric. On macOS,
+render the QR locally with the installed Swift toolchain, then scan it from
+Apple Home's Add Accessory camera:
+
+```sh
+python3 scripts/device.py --port PORT commissioning qr | swift scripts/pairing-qr.swift /tmp/key-right-pairing.png
+open /tmp/key-right-pairing.png
+```
+
+The renderer accepts the USB response or a bare `MT:` payload on stdin. It writes
+a private PNG and refuses to overwrite an existing file. The image contains the
+setup secret; keep it out of Git and shared screenshots. No online QR service
+or extra Python package is used. QR scanning avoids typing the code, but retains
+Matter's proof-of-possession requirement.
+
+BLE and commissionable mDNS advertise `Key Right XXXX`, where `XXXX` is the last
+two MAC bytes in uppercase hexadecimal, for example `Key Right ECF4`. The name
+fits alongside the Matter service in the 31-byte BLE advertisement. Apple Home
+controls the picker label, so the displayed name still needs device validation.
+For an accessory previously paired on the iPhone, Apple supports Add Accessory
+→ More options → selecting the accessory. The C3 has no NFC setup hardware.
+See [Apple's pairing guidance](https://support.apple.com/en-us/102135) and
+[Matter's NFC onboarding explanation](https://csa-iot.org/newsroom/a-smarter-start-matter-1-4-1-makes-setup-easier/).
+
 BLE provides Wi-Fi credentials. No passcode or Wi-Fi credentials belong in the
 repository. The image uses development Matter identifiers and is a personal,
 uncertified accessory.

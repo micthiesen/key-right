@@ -187,7 +187,23 @@ python3 scripts/device.py --port PORT commissioning code
 
 Keep the code private and out of logs, screenshots, and committed records. Each
 uncommissioned boot opens a 15-minute pairing window; this explicit command can
-reopen it. Pair each lamp separately. Apple Home should show one light with
+reopen it. To avoid typing, request `commissioning qr` instead and render its
+payload locally on macOS:
+
+```sh
+python3 scripts/device.py --port PORT commissioning qr | swift scripts/pairing-qr.swift /tmp/key-right-pairing.png
+open /tmp/key-right-pairing.png
+```
+
+Scan the PNG in Apple Home's Add Accessory flow. It contains the same setup
+secret; keep the file private and choose a new output path if one already exists.
+These USB commands reject a device that already has a fabric. A previously
+paired accessory may be selectable through Home's Add Accessory → More options.
+Discovery advertises `Key Right XXXX` using the last two MAC bytes. Record the
+actual Home picker label separately; advertising a name does not prove Apple's
+display behavior or eliminate the initial setup credential.
+
+Pair each lamp separately. Apple Home should show one light with
 power, brightness, and temperature controls; group the two accessories in Home
 to control them together. Grouping has no frame-perfect timing guarantee.
 

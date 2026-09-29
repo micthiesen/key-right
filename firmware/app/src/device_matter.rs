@@ -3,6 +3,8 @@
 
 use core::fmt::Write as _;
 
+use crate::commissioning::{qr_payload, DiscoveryName};
+use crate::commissioning_ble::NamedBle;
 use crate::network_driver::EspWifiDriver;
 use embassy_futures::join::join3;
 use embassy_time::{Duration, Timer};
@@ -109,13 +111,16 @@ pub async fn run<H: crate::runtime::Hardware>(
     };
 
     let mac = esp_hal::efuse::base_mac_address();
+    let discovery_name = mk_static!(DiscoveryName).write(DiscoveryName::new(
+        mac.as_bytes().try_into().expect("MAC address is six bytes"),
+    ));
     let mut identity = String::<32>::new();
     write!(identity, "KR-{mac}").expect("MAC identity fits");
     let identity = mk_static!(String<32>).write(identity).as_str();
     let device = mk_static!(BasicInfoConfig<'static>).write(BasicInfoConfig {
         vendor_name: "Key Right",
         product_name: "Key Right",
-        device_name: "Key Right",
+        device_name: discovery_name.as_str(),
         serial_no: identity,
         unique_id: identity,
         vid: TEST_VID,
@@ -133,6 +138,14 @@ pub async fn run<H: crate::runtime::Hardware>(
         discriminator: u16::from_be_bytes([mac_bytes[4], mac_bytes[5]]) & 0x0fff,
     };
     let pairing_code = commissioning.compute_pairing_code();
+    let pairing_qr = match qr_payload(
+        commissioning.clone(),
+        device,
+        mk_static!([u8; 128]).write([0; 128]),
+    ) {
+        Ok(payload) => payload,
+        Err(error) => halted("commissioning QR encoding failed", error, &mut watchdog).await,
+    };
     let stack = mk_static!(EmbassyWifiMatterStack<BUMP_SIZE, ()>).init_with(
         EmbassyWifiMatterStack::init(device, commissioning, &TEST_DEV_ATT),
     );
@@ -239,7 +252,10 @@ pub async fn run<H: crate::runtime::Hardware>(
             crate::network::RESTART.reset();
             let result = embassy_futures::select::select(
                 stack.run_coex(
-                    EmbassyWifi::new(&mut driver, weak_rand, true, stack),
+                    NamedBle::new(
+                        EmbassyWifi::new(&mut driver, weak_rand, true, stack),
+                        discovery_name.as_str(),
+                    ),
                     &crypto,
                     (NODE, &handler),
                     &kv,
@@ -255,7 +271,7 @@ pub async fn run<H: crate::runtime::Hardware>(
     };
     join3(
         transport,
-        crate::console::run(rx, &runtime, &pairing_code, open_commissioning),
+        crate::console::run(rx, &runtime, &pairing_code, pairing_qr, open_commissioning),
         presets::maintenance(&runtime, &light, || watchdog.feed()),
     )
     .await;

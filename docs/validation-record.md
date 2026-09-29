@@ -224,6 +224,45 @@ Explicit `off` and `verify` passed. Pairing reopened with a new capture at
 `local/pairing-bounded-scan-retry.log`, which also attempts to reattach if the
 same USB port disconnects and marks any capture gap.
 
+The next captured retry passed the bounded scan (ten results and the final
+completion log), added `SyNet-2G`, found channel 1 at -58 dBm, and connected at
+04:28:00 UTC on September 29 (September 28 local). IPv6 link-local was ready
+immediately; DHCP supplied `10.10.1.18` at 04:28:15. At 04:28:47 the board
+received Commissioning Complete, persisted fabric 1 and its network settings,
+and then primed a subscription. Home proceeded to add fabric 2 under a
+30-second failsafe, which expired without a second Commissioning Complete.
+Home removed fabric 1 at 04:29:36 and reported failure. The first Wi-Fi and
+commissioning stages now pass; complete Apple Home setup still does not.
+
+Read-only U7 checks confirmed multicast enhancement is enabled both in the
+controller and the live driver (mode 5), matching Stillair's successful
+workaround. The ESP was associated and authorized, and both IPv4 ARP and IPv6
+neighbour discovery resolved it. mDNS silence after Home removed the fabric is
+not evidence of failed multicast delivery because no live service may remain.
+At 488,030 ms uptime the USB status still showed Wi-Fi connected at -57 dBm,
+IPv4/local-IP ready, one connection attempt, and zero output/storage/recovery
+faults or network timeouts/restarts. `verify` passed and the commissioning
+window reopened without a reboot or NVS erase for meaningful discovery probes.
+
+With a live commissioning window, AP-origin targeted mDNS probes passed over
+IPv4 unicast, IPv4 multicast, and IPv6 unicast. IPv6 multicast timed out twice
+even with QU and hop limit 255. The already working Stillair returned exactly
+the same results, so this is not a demonstrated Key Right-specific cause.
+AP capture also saw Key Right emit advertisements over both IP families.
+Private probe receipts are in `/tmp/key-right-mdns-read-20260929/`.
+
+Two isolated Matter.js 0.17.9 controllers then commissioned the board without
+phone intervention. Controller 929 used its known IPv4 address; controller 930
+used discovery without a supplied address after controller 929 opened a basic
+window. Both completed commissioning, persisted their separate fabrics, and
+primed subscriptions at 04:36:38 and 04:37:52 UTC. Secure remote attribute reads
+through fabric 2 returned Off, level 57, and 303 mired. This establishes working
+two-fabric setup through PASE and operational discovery, but does not reproduce
+Home's exact second-fabric flow over an existing CASE session. Both temporary
+fabrics were removed successfully at 04:38:52–53, and both controllers exited.
+No light-On command, AP setting change, or NVS erase was used. Serial evidence:
+`local/mdns-probe-window.log`. The remaining Home timeout is unresolved.
+
 ## LED-connected acceptance pending
 
 Michael reports the LED panels cannot be connected until the lamp is put back

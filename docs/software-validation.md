@@ -108,6 +108,23 @@ which ended after discovering 35 APs and before any Wi-Fi connection attempt.
 The device's precise encoding error was lost when the cable was replaced.
 Successful association and commissioning still require a fresh physical retry.
 
+## 2026-09-28 named discovery and local QR setup
+
+Both gates passed with 26 core/CLI Rust tests, 41 application host tests, and
+29 Python tests. Three added tests check the per-device name against the pinned
+31-byte BLE advertisement, canonical SDK QR encoding and undersized buffers,
+and the complete identity payload's fit. Real, simulated, and radio-diagnostic
+images passed Clippy and linked-stack checks; the normal real image reserves
+58,256 bytes. Independent review found no additional defect in the name adapter,
+credential handling, or command wiring.
+
+The macOS QR renderer round-tripped the public SDK fixture back to its exact
+payload. Private 0600 output, invalid-input rejection, and refusal to replace
+an existing file or symlink passed. Creation uses exclusive open to enforce
+that policy without a check/create race. No setup secret is sent to an online
+renderer. The installed BLE name, mDNS DN, and actual Home picker label still
+need physical verification; the QR and name do not establish a pairing fix.
+
 ## Stock-firmware evidence
 
 On 2026-09-23, offline emulation of the signed original firmware reproduced

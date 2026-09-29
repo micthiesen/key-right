@@ -11,6 +11,8 @@ use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 use esp_metadata_generated::memory_range;
 use tinyrlibc as _;
 
+mod commissioning;
+mod commissioning_ble;
 mod console;
 mod device_matter;
 mod hardware;

@@ -2,6 +2,8 @@
 extern crate self as rs_matter_embassy;
 pub use rs_matter as matter;
 
+#[path = "../../src/commissioning.rs"]
+pub mod commissioning;
 #[path = "../../src/light.rs"]
 pub mod light;
 #[path = "../../src/network_scan.rs"]
@@ -13,6 +15,8 @@ pub mod recovery;
 #[path = "../../src/runtime.rs"]
 pub mod runtime;
 
+#[cfg(test)]
+mod commissioning_tests;
 #[cfg(test)]
 mod control_tests;
 #[cfg(test)]
