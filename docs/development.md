@@ -7,7 +7,8 @@ simulator, and a separate ESP32-C3 Matter workspace for the installed
 **ESP32-C3_MINI_V1**. The wired assembly has powered up and received the real
 firmware, with the LEDs disconnected. USB diagnostics worked before rework;
 after the PCA acknowledgement failure, Michael found the field guide's signal
-wiring wrong. USB detection is currently absent after the first board's rework.
+wiring wrong. After rework and adjusting the USB cable, the first board now
+passes powered PCA register checks; LEDs remain disconnected.
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 
@@ -109,8 +110,9 @@ alone does not isolate the rail or signal paths.
 
 Keep the LEDs disconnected for initial work. Verify input polarity and record
 the bench PSU voltage/current limit; nominal 13 V goes only to the stock lamp
-input. Bench power under radio load and post-rework USB communication remain
-unverified. Record them in [the validation record](validation-record.md).
+input. Post-rework USB and PCA communication pass on the first board; bench
+power under radio load remains unverified. Record results in
+[the validation record](validation-record.md).
 
 Follow [bench bring-up](bench-bring-up.md) for the ordered first-power,
 read-only chip inspection, preflight, flash, and probing sequence. Install the

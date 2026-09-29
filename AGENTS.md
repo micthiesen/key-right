@@ -31,7 +31,8 @@ Preserve native USB on GPIO18/19; do not invent an antenna-selection GPIO.
 Stock U3 is the PCA9635 at address `0x15`, 100 kHz; stock active channels are
 LED0/warm and LED4/cool. `docs/hardware.md` records historical 3.37 V bus/rail
 readings with approximately 9.9 kΩ pull-ups. The corrected pad map is user
-reported; successful powered PCA readback must be established separately.
+reported; powered PCA readback subsequently passed on the first rewired board.
+This does not establish OE voltage, physical LED output, or the second board.
 The first board reports 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 

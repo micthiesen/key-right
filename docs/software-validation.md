@@ -91,10 +91,12 @@ On September 28, the completed assembly powered from the 13 V bench supply
 with LEDs disconnected; Michael measured 3.345 V at the ESP. USB confirmed a
 C3 revision v0.4 with 4 MiB flash. The full original flash was backed up and
 the real image flashed successfully. The arena fix subsequently brought up the
-hardware USB console. PCA operations fail with an I²C acknowledgement error;
-Michael subsequently corrected the field guide's U4 signal map and confirmed
-the ESP end is correct. The [validation record](validation-record.md) tracks
-per-board rework and subsequent register checks. These results are separate
+hardware USB console. PCA operations initially failed with an I²C acknowledgement
+error. Michael corrected the field guide's U4 signal map, rewired the first
+board, and adjusted an intermittent USB cable. The first board then passed Off
+and ten On-frame register checks, with no output or storage failures, and was
+left at acknowledged Off. The [validation record](validation-record.md) tracks
+per-board rework and exact register results. These results are separate
 from the software checks above; bench testing remains in progress.
 
 Use [bench bring-up](bench-bring-up.md) for the initial sequence and record
