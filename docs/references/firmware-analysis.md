@@ -216,20 +216,20 @@ output mode before clearing PWM. These are chip/data observations; they do not
 predict what the Key Light's external driver network does on this board. No
 physical startup behavior is claimed.
 
-## Physical facts still unresolved
+## Physical evidence boundary
 
-The physical board's convenient SDA/SCL pads, bus voltage, pull-ups, and OE net
-have not been proven. DK9169 pad 10 SDA and pad 9 SCL are datasheet-derived
-candidates only. Realtek PC_1 on module pad 14 is configured as an output in the
-stock firmware, but the trace does not prove that it reaches PCA OE. Verify any
-connection on the actual board; do not infer it from this binary, photos, or
-module numbers. The selected project wiring and stop conditions are in
-[hardware.md](../hardware.md).
+This September 23 analysis did not establish convenient solder points, bus
+voltage, pull-ups, or the OE net. Its DK9169 pad 10/9 bus mapping and pad 14
+control candidate remain software/datasheet-derived evidence, not continuity
+measurements. Do not translate module pin numbers into physical pad positions
+from this binary or the photographs alone.
 
-If I²C fails after wiring, determine whether required pull-ups remain after
-module removal. If measured bus highs are not nominally 3.3 V, stop before
-connecting the ESP32. Whether a level shifter or new pull-ups are needed depends
-on board measurements and is not part of the baseline.
+The later September 28 user worksheet resolves the selected physical connections,
+3.37 V bus/rail readings, and approximately 9.9 kΩ pull-ups. Use its U4 row-based
+map in [hardware.md](../hardware.md). The [validation record](../validation-record.md)
+preserves those measurements and completed wiring status; ESP/PCA operation,
+radio-load rail stability, cold start, and LED output remain pending. Later user
+measurements do not change what this offline analysis itself established.
 
 ## Other research and observation limits
 
@@ -250,10 +250,11 @@ on board measurements and is not part of the baseline.
 
 ## Current assembly path and abandoned experiment
 
-The selected path removes only the Realtek module and retains the PCA9635 control
-path. XIAO D10/GPIO18 routes SDA, D9/GPIO20 routes SCL, and D3/GPIO21 may route to
-active-low OE only when the board net is physically verified. PCA pins 6/10 stay
-in place. Startup/fault behavior has not been tested.
+The installed C3 path removes only the Realtek module and retains the PCA9635.
+GPIO4/5/6 route SDA/SCL/active-low OE using the measured map in
+[hardware.md](../hardware.md); PCA pins 6/10 stay in place. The XIAO C6/buck plan
+has been superseded, though the application has not yet been ported. Wiring is
+complete with LEDs disconnected. Startup/fault behavior has not been tested.
 
 An earlier draft used ESP LEDC through a TXU0102 and lifted PCA pins 6/10. That
 direct-PWM design is abandoned; none of its BOM or isolation guidance is current.

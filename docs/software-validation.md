@@ -1,4 +1,21 @@
-# Software verification, 2026-09-23
+# Software verification
+
+## 2026-09-28 documentation reconciliation
+
+Both required gates passed on macOS arm64 with Rust 1.97.1:
+
+- `sh scripts/check.sh`: formatting, strict Clippy, 16 Rust tests, simulator smoke
+  test, and 4 Python tests.
+- `sh scripts/check-firmware.sh`: formatting, strict Clippy, 24 application host
+  tests, and both real and simulated ESP32-C6 release builds.
+- Changed Markdown local links and `git diff --check`: passed.
+
+This change updates documentation only. No C3 image was built or flashed, and no
+physical bench test was performed. The C3 port remains a separate implementation
+requirement. The earlier software/artifact evidence below is retained with its
+original date and toolchain.
+
+## 2026-09-23 implementation and artifacts
 
 Verified on macOS arm64 with Rust 1.98.0. `RUSTUP_TOOLCHAIN=1.98.0` was set for
 the checks; the repository's default toolchain selection was not changed.
@@ -18,9 +35,15 @@ These checks establish software behavior and buildability, not physical operatio
 The emulator reproduces PCA register commands; it does not emulate the board's
 electrical startup or measure light output.
 
-## Physical status
+## Physical status and scope
 
-No board was flashed or electrically probed. Actual PCA bus access/levels, OE
-routing, cold power-up and reset behavior, physical light output, closed-housing
-radio performance, and Apple Home recovery remain unverified. PCA register
-readback is not a physical output measurement.
+No board was flashed or electrically probed during the September 23 software
+verification above. Those results apply to the C6 implementation and archived
+C6/buck guide, not to a C3 image or the installed assembly.
+
+As of September 28, Michael has supplied pad continuity, bus/rail voltage, and
+pull-up measurements and reports completed C3 wiring with LEDs disconnected.
+See [the validation record](validation-record.md) for those user observations and
+pending bench tests. The C3 port, flashing, powered ESP/PCA operation, startup,
+physical output, closed-housing radio performance, and Apple Home recovery remain
+unverified. PCA register readback is not a physical output measurement.

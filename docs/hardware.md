@@ -1,98 +1,144 @@
-# Hardware plan
+# Installed hardware
 
-The replacement removes only the original Realtek controller module. Keep the
-PCA9635, its LED driver circuitry, the LED panels, and the 13 V / 4 A adapter.
-The ESP32-C6 talks to the PCA9635 over I²C. No output leg is lifted and no added
-output interlock is part of this design. The photographed board does not identify
-safe connection pads or prove startup behavior; use the field guide's stop
-conditions and do not treat the plan as physically validated.
+The original Realtek controller module has been removed from Michael's original
+full-size Elgato Key Light. Its replacement is the blue **ESP32-C3_MINI_V1**
+development board with USB-C, BOOT and RESET buttons, and a bare ESP32-C3 package.
+This is not a Seeed XIAO ESP32-C6 or an official ESP32-C3-MINI-1U module.
 
-## Minimum parts
+On **2026-09-28**, Michael reported that the board wiring was complete. The LED
+panels are **not connected**. The assembly is ready for bench-PSU testing and
+firmware work, but no first-power, flashing, I²C, or light-output result for the
+completed assembly has been reported. See [the validation record](validation-record.md).
 
-| Qty | Part | Use |
+Retain the PCA9635 U3, stock LED power/current-limiting circuitry, LED panels,
+housing, and original 13 V / 4 A supply. No PCA pin is lifted. The rocker has
+already been bypassed into its working ON state; firmware does not operate it.
+The installed design uses the stock regulated rail and five wires. Secure the
+board and wiring with insulated mounting and strain relief. It has no added buck
+converter, level shifter, pull-ups, output interlock, or connection to the C3 `5V`
+pad.
+
+## Exact five-wire map
+
+Orient the Key Light board with the **white power resistors to the left** and the
+**removed U4 module footprint below the PCA9635**. Count only U4's horizontal top
+row; these are physical pad positions, not a module datasheet's pad numbers.
+
+| Signal | Key Light connection | C3 board pad | Function |
+| --- | --- | --- | --- |
+| Power | J6 / DEBUG, top-left pad; reported 3.37 V | `3.3` | Direct regulated supply, not a GPIO |
+| Ground | J8 / UART, top pad of the left of its two three-pad columns | `G` | Common ground |
+| SDA | U4 top row, second pad from left; continuity to PCA9635 pin 27 | `4` | GPIO4, I²C SDA |
+| SCL | U4 top row, first pad from left; continuity to PCA9635 pin 26 | `5` | GPIO5, I²C SCL |
+| OE | U4 top row, fifth pad from right; continuity to PCA9635 pin 23 | `6` | GPIO6, active-low output enable |
+
+On the C3's **back/label side with USB-C at the top**, `G` is second down on the
+left, `3.3` third down on the left, `4` fourth down on the left, `5` at the top
+right, and `6` second down on the right. The printed numbers are GPIO numbers,
+not Arduino `D` aliases. OE is one of the installed five wires, not an optional
+connection or a permanently grounded substitute.
+
+## Reported electrical measurements
+
+These measurements were supplied in the 2026-09-28 handoff. They establish the
+installation's reported connection points and electrical baseline; they were not
+performed by the implementation agent.
+
+| Measurement | Reported result |
+| --- | ---: |
+| DC input | 13 V |
+| PCA9635 VDD | 3.37 V |
+| Idle SDA, SCL, OE | 3.37 V each |
+| SDA-to-VDD, SCL-to-VDD, OE-to-VDD | Approximately 9.9 kΩ each |
+| SDA-to-SCL | Approximately 20 kΩ |
+| VDD-to-GND, unpowered | Approximately 1 kΩ |
+| IC-pin-to-selected-pad continuity | Approximately 0–0.1 Ω |
+
+The readings support existing approximately 10 kΩ pull-ups on SDA, SCL, and OE.
+Retain those pull-ups and use a **100 kHz** I²C bus. The stock 3.37 V rail is the
+accepted supply for this installation. Its unloaded voltage does not establish
+behavior during C3 startup, BLE commissioning, or Wi-Fi transmission. Keep
+brownout detection enabled and record reset reasons during bench testing.
+
+## GPIO, USB, and flash constraints
+
+Keep GPIO4/SDA, GPIO5/SCL, GPIO6/OE, and the 100 kHz bus rate centralized and fixed
+in the board configuration. GPIO4/5/6 have alternate JTAG functions; explicitly
+assign their GPIO/I²C functions and do not select external pad JTAG on them.
+Use native USB Serial/JTAG on GPIO18/19 for programming and the bidirectional
+console. It is not a USB-OTG/TinyUSB mass-storage or DFU interface. Leave other
+application GPIOs unused, including any unverified onboard status LED.
+
+Drive GPIO6 as **open-drain**. Set its output latch HIGH before enabling
+open-drain output mode. Releasing HIGH lets the existing OE pull-up act; pulling
+LOW enables the PCA's configured outputs. The electrical meaning of OE HIGH
+depends on MODE2 and does not by itself prove that the lamp is dark.
+
+Plan for **4 MiB flash and no PSRAM**. Read chip identity and flash ID/capacity
+from the connected board before flashing; the actual capacity remains unverified.
+The current Rust MCU application and flash helper still target the XIAO ESP32-C6.
+They cannot be used to flash this C3 until the board port and target checks are
+complete. [Development instructions](development.md) own that software status.
+
+The handoff reports both an onboard antenna component and an external antenna
+socket visible in the board photos. Antenna routing/selection is hardware; there
+is no established firmware antenna-selection GPIO. Do not add one by analogy
+with another board. Record the installed antenna arrangement and test BLE and
+Wi-Fi in the closed housing before claiming radio performance.
+
+## USB and power sequence
+
+With **any lamp wiring attached**, power the assembly from the lamp board and
+use USB with **VBUS/5 V blocked while USB data and ground remain connected**.
+A charging-only cable or a USB data blocker does not provide that arrangement.
+Do not connect ordinary powered USB merely because the lamp adapter or bench
+PSU is switched off; the shared 3.3 V rail and signal paths remain connected.
+
+Ordinary powered USB is permitted only after disconnecting the C3 from **all
+five lamp wires**. Remove USB before restoring those wires. This rule applies
+to flashing, console use, recovery, and bench testing alike. Do not rely on USB
+back-powering the stock board.
+
+For the upcoming bench session, leave the LED panels disconnected, verify the
+bench-supply connection and polarity, and record the chosen voltage and current
+limit before energizing the assembly. The reported lamp input is 13 V; no
+bench-PSU current limit or loaded-supply result has yet been supplied. A bench
+pass requires actual observations, not the wiring-complete report alone.
+
+## Controller evidence and physical limits
+
+[Signed stock-firmware analysis](references/firmware-analysis.md) establishes the
+following software baseline. These remain firmware evidence, not measurements
+of the modified assembly:
+
+| Item | Stock-firmware evidence | Physical check still needed |
 | --- | --- | --- |
-| 1 | Seeed Studio XIAO ESP32-C6, SKU 113991254 | 4 MB flash; native USB; official [product page](https://www.seeedstudio.com/Seeed-Studio-XIAO-ESP32C6-p-5884.html) and [pin/power guide](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/) |
-| 1 | Pololu D24V25F5, item 2850 | 5 V buck from the existing 13 V supply; 6–38 V input. [Manufacturer specifications](https://www.pololu.com/product/2850/specs) |
-| as needed | Insulated hookup wire, insulated mounting, heat-shrink/strain relief | Secure the XIAO and avoid contact with the metal housing |
+| Address and bus rate | Seven-bit `0x15`, 100 kHz | Communication with this wired PCA |
+| Active channels | LED0/warm on pin 6; LED4/cool on pin 10 | Visible bank/output behavior once the LEDs are connected |
+| Output mode | `MODE2=0x14`: inverted push-pull, update on STOP, OE-high outputs LOW | External-stage behavior and actual Off |
+| 3300 K, nominal 3% | Warm/cool raw PCA PWM values `6/2` | Output observation; these are not optical calibration |
+| 5000 K, nominal 3% | Warm/cool raw PCA PWM values `3/6` | Output observation; these are not optical calibration |
 
-No external antenna, fuse, jumper, diode, level shifter, pull-downs, or output
-buffer is included in the baseline. The user's original adapter powers both the
-stock lamp and the buck. Do not assume the adapter plug polarity; check its label
-or the field guide before wiring.
+Do not replace this established command baseline with guessed channels, pure
+warm/cool mixes, or a different brightness. If physical observations contradict
+it, record the contradiction before revising the model.
 
-## Power
+The PCA's power-on configuration differs from the configured stock mode. There
+is no independent output cutoff, and control of OE cannot guarantee darkness
+during ROM boot, cold start, controller reset, brownout, or an I²C failure. Bench
+tests with the LEDs disconnected can establish power, USB, GPIO, and controller
+communication, but cannot establish light output. Reconnect the LEDs only with
+power removed, then observe Off, both presets, startup/reset behavior, and
+network recovery separately. A register acknowledgement/readback is not a
+measurement of emitted light.
 
-Connect the existing adapter's verified +13 V and GND to the buck input. Verify
-the buck's fixed 5 V output before connecting the XIAO. Connect buck 5 V to
-the XIAO 5V pin and buck GND to XIAO GND. The stock board and XIAO share GND.
-Do not connect the stock PCA VDD/3.3 V rail to XIAO 3V3.
+## Evidence provenance
 
-The Seeed schematic connects the XIAO 5V pin directly to USB VBUS. Flash the
-XIAO and request its pairing code over USB before connecting any buck wires.
-Unplug USB before attaching the buck. For later USB service, disconnect the
-buck's 5 V lead from the XIAO first; unplug USB before reconnecting that lead.
-This excludes simultaneous sources without a jumper or series diode. The 13 V
-adapter may remain connected during later USB service once the buck's 5 V lead
-has been removed from the XIAO.
-
-Official references: [XIAO ESP32-C6 schematic](https://files.seeedstudio.com/wiki/SeeedStudio-XIAO-ESP32C6/XIAO-ESP32-C6_v1.0_SCH_PDF_24028.pdf),
-[Seeed power/pin guidance](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/).
-Seeed recommends a diode for external input on the 5V/VBUS net. For this build,
-the buck's 5 V lead is physically disconnected before USB is attached; with only
-one source connected, the diode is not required to power the XIAO. This is based
-on the schematic's shared 5V/VBUS net and the exclusive connection sequence.
-
-## PCA9635 bus and optional OE connection
-
-Stock firmware analysis identifies PCA9635 U3 at address `0x15`, 100 kHz, with
-SDA on PCA pin 27, SCL on pin 26, active-low OE on pin 23, LED0/warm on pin 6, and
-LED4/cool on pin 10. Software routes the selected XIAO GPIOs as:
-
-| XIAO pad | ESP32-C6 GPIO | Function |
-| --- | ---: | --- |
-| D10 | 18 | SDA |
-| D9 | 20 | SCL |
-| D3 | 21 | Optional PCA OE; active low |
-
-These are the project's explicit I²C GPIO choices. D10/D9 are not the XIAO
-board's documented default SDA/SCL pads. The hardware bus connection must be
-found from the actual board, preferably at the former module's bus pads only
-after continuity to U3 pins 27/26 is verified. Photos and the DK9169 firmware
-do not prove a convenient board-pad mapping or prove the former module pads are
-still usable after removal. Do not guess by silkscreen or orientation.
-
-Before connecting GPIO18/20, verify with the lamp powered and XIAO disconnected
-that idle SDA/SCL levels are nominally 3.3 V; do not connect them to a 5 V bus.
-If the bus does not communicate after wiring, investigate its existing pull-ups
-before adding any parts. No pull-up or level-shifter parts are in the baseline.
-
-PCA OE must have a known electrical state. If the actual board already ties OE
-low after module removal, it may remain there and D3 is unused. Otherwise GPIO21/D3
-may connect to U3 OE pin 23 only after the net and board access point are verified
-and confirmed exclusive; firmware drives HIGH to disable and LOW to enable. If OE
-is floating or its route is unknown, stop and trace it. Do not assume a floating
-OE will enable the PCA, and do not tie it to a rail based on a photograph.
-
-## Startup and operating limits
-
-The signed stock firmware initializes PCA mode registers and later clears PWM
-registers. Firmware tests do not establish what the lamp does during cold start,
-reset, brownout, or failed I²C. This design has no independent output cutoff; its
-startup and fault behavior remains physically unverified.
-
-The board's onboard antenna is the default; no external antenna is required or
-selected. Test Wi-Fi and BLE after the cover is closed. A metal enclosure may
-weaken radio performance; if the closed assembly cannot commission reliably,
-record that finding before choosing any antenna change.
-
-## Minimum physical checks
-
-Follow the printable field guide. Identify U3 pin 1 and the actual SDA/SCL points;
-verify their connection to U3 pins 27/26 and nominal 3.3 V bus levels. Verify OE
-is tied low or connect it to D3 only on a proven OE net. Verify
-adapter polarity and buck output, then test Off, both presets, a power cycle, and
-Apple Home with the housing closed. No hardware has been modified or tested by
-the agent.
-
-The earlier TXU0102/direct-PWM design in historical notes is abandoned. Do not
-lift PCA pins 6 or 10, install a translator, or follow the old direct-PWM BOM.
+The board identity, five-wire map, electrical readings, rocker state, and USB
+power rule were incorporated from the
+[2026-09-28 handoff at commit `a617f1e`](https://github.com/micthiesen/key-right/blob/a617f1e77529d3fb66339c6e1a4e7b3636a03fcf/docs/handoff).
+That handoff cites Michael's completed probing worksheet and
+`Elgato_Key_Light_C3_Wiring_Field_Guide.pdf`; those attachments are not in this
+repository. The handoff text is the available record of their reported findings.
+The older [repository field guide](field-guides/key-right/README.md) describes the
+superseded C6/buck plan and is archival, not the installed wiring instructions.

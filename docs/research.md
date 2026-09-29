@@ -1,8 +1,17 @@
 # Findings and references
 
-Recorded 2026-09-22; autonomous firmware/hardware research added 2026-09-23. Separate observed hardware facts from proposals and unverified wiring.
+Recorded 2026-09-22; firmware research added 2026-09-23; installed hardware and
+user measurements reconciled 2026-09-28. Keep user observations, software evidence,
+and untested physical behavior distinct.
 
-**Current design:** remove only the Realtek module and drive the retained PCA9635 over I²C; see [hardware.md](hardware.md). An earlier TXU0102/direct-PWM proposal that lifted PCA pins 6/10 is abandoned and is not assembly guidance. [Signed firmware emulation](references/firmware-analysis.md) resolves address/configuration, channel order and nominal 3% PWM. The user selected 3300 K and 5000 K; actual bus access/levels and physical output remain unverified.
+**Current design:** the installed ESP32-C3_MINI_V1 replaces only the Realtek module
+and drives the retained PCA9635 over I²C; see [hardware.md](hardware.md). Wiring is
+complete and LEDs are disconnected. User measurements establish the connection
+points, bus levels, and existing pull-ups. Powered ESP/PCA operation and light
+output remain untested. [Signed firmware emulation](references/firmware-analysis.md)
+establishes the selected address/configuration, channel order, and nominal 3%
+commands for the user's 3300 K and 5000 K presets. Both the earlier direct-PWM
+proposal and subsequent XIAO C6/buck plan are superseded; neither is assembly guidance.
 
 ## Actual light and photos
 
@@ -21,11 +30,14 @@ The user's supplied photographs independently confirm:
 - Dexatek DK-9169 V1.0 module, RTL8711AM processor.
 - U3 marked PCA9635PW, separate from the wireless module.
 - J6 DEBUG: unpopulated 2x5 through-hole footprint.
-- J8 UART and J7 FW DOWNLOAD: unpopulated 1x3 footprints.
+- J8 UART and J7 FW DOWNLOAD: unpopulated pad areas.
 - Four two-pin LED connections, disconnected by the user.
 - Existing power resistors and output circuitry remain in place.
 
-The J6 traces run toward the module's documented debug-pin edge. No complete J6 mapping was established. Square pads provide orientation clues, not proof of a standard cable pinout. J7's exact function is unverified. These interfaces are now background reference; the decided approach replaces the module.
+The initial photos did not establish a full J6 pinout. The later user worksheet
+identifies J6's top-left pad as the measured 3.37 V supply and the selected J8 pad
+as ground, in the orientation defined in [hardware.md](hardware.md). This does
+not establish a standard debug-cable pinout or J7's function.
 
 ## Retained driver
 
@@ -37,15 +49,36 @@ Chip-level reference only, not a finalized board wiring instruction:
 - Ground/VSS: pin 14; VDD: pin 28.
 - Active-low output enable: pin 23.
 
-The board's convenient connection pads, bus voltage, pull-ups, and OE route still require field verification. Firmware emulation establishes LED0/warm and LED4/cool, address `0x15`, stock I²C setup, and `MODE2=0x14`. Pull-ups and OE tracing matter to the selected I²C design. The old module may carry supporting bus components, so do not presume they remain after removal. The user selected an external buck converter for ESP power.
+The September 28 user measurements resolve the selected SDA/SCL/OE pads and
+report 3.37 V idle levels with approximately 9.9 kΩ signal-to-VDD resistance.
+They support retaining the existing pull-ups after module removal. Firmware
+emulation establishes LED0/warm and LED4/cool, address `0x15`, stock I²C setup,
+and `MODE2=0x14`; physical readback and LED behavior are still pending.
 
 [NXP datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf), also saved under references/datasheets.
 
-## XIAO power and GPIO sources
+## Installed C3 hardware evidence
 
-The selected XIAO pin map is documented by [Seeed](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/): D10/GPIO18, D9/GPIO20, D3/GPIO21, 5V and GND. Seeed's [official schematic](https://files.seeedstudio.com/wiki/SeeedStudio-XIAO-ESP32C6/XIAO-ESP32-C6_v1.0_SCH_PDF_24028.pdf) shows the 5V header on the USB VBUS net. This build avoids connecting the two sources together: flash/request the pairing code before buck wiring, and disconnect the buck's 5 V lead before later USB service. No diode or source-select jumper is in the baseline. This is the selected exclusive-source wiring, not a general recommendation for projects that leave USB and external 5 V connected together.
+The [September 28 handoff in Git history](https://github.com/micthiesen/key-right/blob/a617f1e77529d3fb66339c6e1a4e7b3636a03fcf/docs/handoff)
+transcribes the user's probing worksheet and final C3 wiring guide. It identifies
+the board as `ESP32-C3_MINI_V1`, maps GPIO4/5/6 to SDA/SCL/OE, and records direct
+power from J6's 3.37 V rail. The worksheet and named C3 PDF are not stored here;
+the complete transcribed map/readings are retained in [hardware.md](hardware.md)
+and [validation-record.md](validation-record.md). Michael separately reported
+completed wiring with LEDs disconnected on September 28.
 
-If I²C does not communicate, first establish whether pull-ups remain after module removal and whether the bus levels suit XIAO GPIO. Additional pull-ups or level translation are conditional troubleshooting only; no value or part is selected without measurements on this board.
+The [ESP32-C3 datasheet](https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf)
+documents GPIO multiplexing, including the alternate pad-JTAG functions on
+GPIO4/5/6. The [native USB Serial/JTAG guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/api-guides/usb-serial-jtag-console.html)
+documents the fixed USB peripheral. Neither identifies this third-party board's
+antenna routing or flash capacity. Do not infer an antenna GPIO or MINI-1U module
+identity. The C3 port must preserve USB GPIO18/19 and use open-drain GPIO6.
+
+The earlier [Seeed pin guide](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/)
+and [XIAO schematic](https://files.seeedstudio.com/wiki/SeeedStudio-XIAO-ESP32C6/XIAO-ESP32-C6_v1.0_SCH_PDF_24028.pdf)
+remain historical sources for the old C6/buck design only. Its power-isolation
+procedure does not apply to the installed C3; use the five-wire/USB rules in
+[hardware.md](hardware.md).
 
 ## Original-controller research
 
@@ -85,7 +118,8 @@ This is historical integration context; the selected replacement uses Matter dir
 
 ## Selected Matter implementation
 
-Updated 2026-09-23: the user selected reuse of `../stillair`'s Matter connectivity.
+Selected 2026-09-23 and retained in the September 28 reconciliation: reuse
+`../stillair`'s Rust Matter connectivity.
 This replaces the earlier direct-HAP/Homebridge evaluation path. The source snapshot
 is Stillair commit `af12fec55430b4af7704dd89636bdd102a0c4158`, particularly
 `firmware/app/src/matter.rs`, `firmware/app/src/output.rs`, its Cargo manifest,
@@ -94,5 +128,8 @@ lockfile, and RISC-V target configuration.
 Stillair uses ESP32-C6, `rs-matter-embassy`, concurrent BLE commissioning and Wi-Fi,
 hardware-seeded randomness, and an NVS partition discovered from the flash partition
 table. Keep its dependency revisions together when adapting the stack. Its fan
-handler and motor GPIO configuration do not apply to Key Right. See
-[development.md](development.md) for the port's scope and remaining validation.
+handler and motor GPIO configuration do not apply to Key Right. The current
+application remains C6-only; see [development.md](development.md) for the C3 port
+requirements and remaining validation. The handoff's C++/ESP-Matter rewrite,
+30% brightness default, generic calibration system, and changed restart/fault
+policies were not adopted.

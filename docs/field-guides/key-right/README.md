@@ -1,12 +1,17 @@
-# Key Right field guide
+# Historical Key Right field guide
 
-[Open the two-page guide](key-right-field-guide.pdf).
+**Superseded on 2026-09-28. Do not use this guide to wire, power, or flash the
+installed ESP32-C3_MINI_V1.** It describes the old XIAO C6/buck plan and its USB
+instructions do not apply to the direct-3.37 V assembly. Use the current
+[hardware map](../../hardware.md) and [development instructions](../../development.md).
 
-Revision 2 replaces the eight-page direct-PWM guide. It keeps the stock PCA9635
+[Open the archived two-page guide](key-right-field-guide.pdf).
+
+Revision 2 replaced the eight-page direct-PWM guide. It keeps the stock PCA9635
 and uses an ESP32-C6, a buck converter and wiring. There are twelve steps, a large
 board photo, pin maps to circle, spaces for measurements and a wiring diagram.
 
-## Rebuild
+## Reproduce the historical guide
 
 From the repository root:
 
@@ -38,8 +43,10 @@ claims that a pictured connection has been measured.
 The guide's copy received an `unslop` pass: short actions, exact pins and
 commands, and one compact instruction for unresolved connections or voltage.
 Extra-component investigations stay in [hardware.md](../../hardware.md).
-Both PDF pages are rendered and checked before printing. Hardware operation and
-Home pairing remain untested until the user follows the guide.
+Both PDF pages were rendered and checked before printing. The source, PDF, and
+receipts remain as historical reference. They are not the later C3 wiring guide
+cited in the September 28 handoff; that PDF is not stored in this repository.
+Current physical results belong in [the validation record](../../validation-record.md).
 
 ## Printing
 

@@ -1,8 +1,9 @@
 # Key Right
 
 Rust firmware replaces only the original Elgato Key Light's Realtek controller
-with an ESP32-C6. Retain the PCA9635 and stock LED power circuitry. Reliable local
-Apple Home control and automatic recovery are the product goals.
+with the installed ESP32-C3_MINI_V1. Retain the PCA9635 and stock LED power
+circuitry. Reliable local Apple Home control and automatic recovery are the
+product goals.
 
 ## Architecture
 
@@ -12,25 +13,32 @@ Apple Home control and automatic recovery are the product goals.
 - `docs/development.md` records build, flashing, console use, and coverage.
 - `firmware/core` is dependency-free `no_std` state and PCA9635 logic.
 - `firmware/cli` runs the core against an in-memory adapter.
-- `firmware/app` is the separate XIAO ESP32-C6 Matter workspace adapted from Stillair.
+- `firmware/app` is the separate Matter workspace adapted from Stillair; it still
+  targets the old XIAO ESP32-C6 and requires a C3 port before flashing this assembly.
 - `scripts/check.sh` and `scripts/check-firmware.sh` are host and MCU gates.
 
-The selected controller is the Seeed XIAO ESP32-C6. The project routes D10/GPIO18
-to SDA, D9/GPIO20 to SCL, and may route D3/GPIO21 to the PCA9635 active-low OE
-only when the board net is physically verified. Stock U3 is the PCA9635 at
-address `0x15`, 100 kHz; stock active channels are LED0/warm and LED4/cool. The
-actual board connection points, bus levels/pull-ups, and OE route remain physical
-checks. Never infer them from a photo or module documentation alone.
+The installed board is marked ESP32-C3_MINI_V1, not an official MINI-1U module.
+GPIO4 is SDA, GPIO5 SCL, and GPIO6 active-low PCA OE. OE must be open-drain:
+set/release HIGH before enabling output mode, then drive LOW to enable the PCA.
+Preserve native USB on GPIO18/19; do not copy XIAO antenna GPIO3/14 writes.
+Stock U3 is the PCA9635 at address `0x15`, 100 kHz; stock active channels are
+LED0/warm and LED4/cool. `docs/hardware.md` owns the user-measured five-wire pad
+map and 3.37 V bus/rail readings with approximately 9.9 kΩ pull-ups. These settle
+the connection points, not physical output or power stability under radio load.
+Plan for 4 MiB flash/no PSRAM, but detect capacity before flashing.
 
-Hardware baseline is one ESP dev board, the selected buck converter, and wiring
-and insulated mounting. Keep the PCA and driver path intact. No TXU translator,
-lifted PCA pins, external antenna, fuse, source jumper, or output interlock is part
-of the design. USB and buck power are mutually exclusive: flash/request the
-pairing code before buck wiring; for later USB service, disconnect the buck's
-5 V lead from the XIAO before connecting USB, and unplug USB before reconnecting it.
+The C3 takes power directly from J6's measured 3.37 V rail at its `3.3` pad.
+No buck, C3 `5V` connection, extra pull-ups, translator, lifted PCA pins, or output
+interlock is part of the design. The rocker is already bypassed ON. With lamp
+wiring attached, use lamp/bench power and USB with VBUS blocked, data and ground
+intact. Ordinary powered USB requires disconnecting all five lamp wires first;
+unplugging the lamp adapter alone is insufficient. The old C6/buck PDF is historical.
+On 2026-09-28 the user reported wiring complete, LEDs disconnected, ready for bench
+PSU bring-up. Flashing, powered bench operation, and LED-output tests remain pending.
 Do not claim off during cold start, reset, or brownout until the actual light is
 observed; there is no independent output cutoff.
 
+Keep the Rust stack, saved-intent/startup policy, and automatic recovery behavior.
 The two fixed presets are 3300 K and 5000 K. Signed firmware emulation establishes
 warm/cool raw PCA values 6/2 and 3/6 at nominal 3%; these are commands, not an
 optical calibration. Keep intended, acknowledged, and measured physical output
@@ -54,10 +62,11 @@ sh scripts/check-firmware.sh
 ```
 
 Use `cargo fmt --all` at the root and `cargo fmt` in `firmware/app`. The MCU gate
-builds explicit real and simulated images. Host tests cannot establish wiring,
-PCA bus levels, startup behavior, radio performance in the closed housing, or
-physical output. Keep bench simulation separate from real I/O and record physical
-results in `docs/validation-record.md`. No credentials or hardware are needed for
+currently builds explicit real and simulated C6 images, not C3 compatibility.
+Host tests cannot establish wiring, PCA bus levels, startup behavior, radio
+performance in the closed housing, or physical output. Keep bench simulation
+separate from real I/O and record physical results in `docs/validation-record.md`.
+No credentials or hardware are needed for
 the software gates.
 
 Personal project: review, verify, commit, and push completed scoped changes to
