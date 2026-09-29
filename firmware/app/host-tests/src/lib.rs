@@ -22,6 +22,8 @@ pub mod runtime;
 #[cfg(test)]
 mod boot_tests;
 #[cfg(test)]
+mod commissioning_ble_tests;
+#[cfg(test)]
 mod commissioning_tests;
 #[cfg(test)]
 mod control_tests;

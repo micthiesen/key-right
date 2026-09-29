@@ -16,3 +16,11 @@ The application setup and original bench transport came from the user's Stillair
 repository, revision `af12fec55430b4af7704dd89636bdd102a0c4158`. Adaptation details
 are in [development.md](docs/development.md). The proprietary Elgato firmware used
 for offline analysis is not distributed in this repository.
+
+`firmware/vendor/trouble-host-0.6.0` contains the published Trouble BLE host 0.6.0
+crate by the Embassy project contributors, with a small GAP-name lifetime patch.
+Its [MIT license](firmware/vendor/trouble-host-0.6.0/LICENSE-MIT) and
+[Apache-2.0 license](firmware/vendor/trouble-host-0.6.0/LICENSE-APACHE) are retained.
+The [patch record](firmware/vendor/trouble-host-0.6.0/KEY-RIGHT-PATCH.md) identifies
+the exact upstream source and regression coverage. No dependency version was
+upgraded for this correction.

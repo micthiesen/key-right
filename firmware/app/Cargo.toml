@@ -1,6 +1,6 @@
 [package]
 name = "key-right-app"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 rust-version = "1.88"
 publish = false
@@ -30,6 +30,8 @@ rs-matter-embassy = { git = "https://github.com/ivmarkov/rs-matter-embassy", rev
   "esp",
   "log",
   "embassy-net",
+  "max-subscriptions-16",
+  "max-im-buffers-32",
 ] }
 # rs-matter pulls a few libc symbols in through its x509 path.
 tinyrlibc = { version = "0.5", default-features = false, features = [
@@ -113,6 +115,8 @@ opt-level = 3
 # From the pinned rs-matter-embassy `examples/esp/Cargo.toml`, via Stillair.
 # These crates share generated metadata. Update the complete table together.
 [patch.crates-io]
+# Preserve the locked SDK release, fixing its one-shot GAP name allocation.
+trouble-host = { path = "../vendor/trouble-host-0.6.0" }
 esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
 esp-rtos = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
 esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
