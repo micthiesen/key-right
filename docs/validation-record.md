@@ -70,7 +70,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | U4 signal-wiring correction | Michael reports OE = top-row pad 5 from left (1-based), SCL = rightmost, SDA = second from right; ESP ends correct. First board rewired, signal-pin continuity and shorts checked by Michael. Powered PCA readback now passes on this board. Second board rework completion not yet reported |
 | USB after first-board rework | Initially no device in serial nodes, `ioreg`, or `system_profiler SPUSBHostDataType`, despite BOOT/RESET and reported red power LED. USB watcher then captured connection activity; Michael identified a position-sensitive cable and adjusted it. `/dev/cu.usbmodem101` now answers as the original `KR-88:56:a6:39:ec:f4`. Initial status at 346,199 ms uptime reports `ChipPowerOn`, acknowledged Off, and no output/storage fault. No reflash was needed. Michael reports power is good; no new numerical rail reading or PSU CV/CC indication supplied |
 | C3 chip identity and detected flash ID/capacity | ESP32-C3 revision v0.4, 40 MHz crystal, 4 MiB flash detected by espflash; raw flash ID was not printed |
-| C3 firmware commit, build target, image/partition fit | Current normal real `hardware-light` image is `4fee6bc`, `riscv32imc-unknown-none-elf`; 1,915,920 / 4,063,232 app-partition bytes, linked stack 57,912 bytes. Both software gates and flash preflights passed. Initially flashed `fb241df`, then arena fix `ec1cff9`; temporary radio-diagnostic images were replaced by this normal image |
+| C3 firmware commit, build target, image/partition fit | Current normal real `hardware-light` image is `c21825c`, `riscv32imc-unknown-none-elf`; 1,916,368 / 4,063,232 app-partition bytes, linked stack 57,912 bytes. Both software gates and flash preflights passed. Initially flashed `fb241df`, then arena fix `ec1cff9`; temporary radio-diagnostic images were replaced by this normal image |
 | Read-only serial inspection and flash-helper preflight | Passed `sh scripts/flash.sh --info /dev/cu.usbmodem1101`; no flash write. macOS identified Espressif USB VID `0x303a`, PID `0x1001`, 12 Mb/s. Holding BOOT, tapping RESET, then releasing BOOT exposed USB and produced the accessory prompt |
 | Bench-PSU connection/polarity, voltage setting, current limit | User reports 13 V supply enabled; current limit/current draw and CV/CC indication not supplied |
 | Power/USB isolation arrangement used | User opened a USB-C cable and disconnected its larger red conductor. With USB alone, no ESP power indication/enumeration was reported. USB data works with bench power. VBUS isolation has not been independently measured |
@@ -216,6 +216,13 @@ logging. The target SSID appeared within the first six results in the captured
 diagnostic scans. The specific device-side error was not retained during the
 cable change; the encoder regression test establishes the overflow mechanism
 separately. Fresh Home commissioning remains the acceptance check.
+
+The bounded-scan image `c21825c` was flashed with NVS preserved. At 15,992 ms
+uptime, identity and real-output mode matched, intent and acknowledged state
+were Off at level 57 / 303 mired, and output/storage/recovery counters were zero.
+Explicit `off` and `verify` passed. Pairing reopened with a new capture at
+`local/pairing-bounded-scan-retry.log`, which also attempts to reattach if the
+same USB port disconnects and marks any capture gap.
 
 ## LED-connected acceptance pending
 
