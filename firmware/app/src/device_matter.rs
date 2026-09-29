@@ -43,7 +43,10 @@ macro_rules! mk_static {
     }};
 }
 
-const BUMP_SIZE: usize = 20_000;
+// The complete light handler plus concurrent BLE/Wi-Fi transport exceeds the
+// SDK example's 20,000-byte arena on C3 (first bench boot panicked there).
+// Keep room for transport futures; the MCU gate separately checks stack space.
+const BUMP_SIZE: usize = 32 * 1024;
 const LIGHT_ENDPOINT: u16 = 1;
 const COLOR_TEMPERATURE_LIGHT: DeviceType = DeviceType {
     dtype: 0x010c,
