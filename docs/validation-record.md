@@ -21,8 +21,8 @@ U4's top row, OE is pad 5 counting from 1 at the left, SCL is rightmost, and SDA
 is second from right. ESP GPIO4/SDA, GPIO5/SCL, and GPIO6/OE remain unchanged.
 Michael reports that the first board's rework is complete, the specific signal
 paths and absence of shorts are confirmed, and it is connected and powered.
-The second board's rework completion is not yet reported. After Michael adjusted
-the cable, the first board returned on `/dev/cu.usbmodem101` and passed powered
+The second board subsequently passed real PCA writes/readback, as recorded below.
+After Michael adjusted the cable, the first board returned on `/dev/cu.usbmodem101` and passed powered
 PCA register checks. Subsequent OE and connector probing is recorded below.
 Michael later replaced the cable with a stable one and confirmed that its
 VBUS/5 V is also blocked.
@@ -494,6 +494,55 @@ then stayed Off without a spinner during the requested one-minute Off check.
 This passes the final Home control check and releases the first board for
 unpowered reassembly. Firmware remains `b43e6bd` / 0.1.3; subsequent documentation
 commits do not require another flash. No further connector probing is owed.
+
+## Second-board flash, 2026-09-28 local / September 29 UTC
+
+Michael connected the second board for flashing and live checks, with no further
+probing requested. Native USB on `/dev/cu.usbmodem101` identified ESP32-C3
+revision v0.4, a 40 MHz crystal, 4 MiB flash and MAC `88:56:a6:39:f4:14`.
+This is distinct from the first board's `88:56:a6:39:ec:f4`.
+
+The unchanged final real image, commit `b43e6bd` / firmware 0.1.3, passed the
+image/partition and 32 KiB linked-stack preflight. Application size remains
+1,930,256 bytes and linked stack 41,200 bytes. Flashing completed successfully
+at 06:00:10 UTC with NVS preserved. An optional full original-flash read did not
+complete and was cancelled before flashing; no second-board backup was produced.
+The empty backup placeholder was removed. Flash receipt:
+`/tmp/key-right-board2-flash.log`.
+
+The application console did not respond after flashing or the tool-driven reset.
+A physical RESET press was requested with power and the VBUS-blocked USB cable
+left connected. After Michael confirmed the press, the console reported hardware
+mode, firmware 0.1.3 and identity `KR-88:56:a6:39:f4:14`. Initial state was Off,
+level 57 and 303 mired, with reset reason `ChipPowerOn`, no stored network, and
+no output/storage fault. This establishes the default-Off first boot on this
+board; the earlier silent console did not establish an application boot failure.
+
+Between 06:10:07 and 06:10:12 UTC, all 24 PCA registers matched the expected
+stock configuration and each `verify` passed:
+
+| State | Level | Temperature (mired) | Warm/cool PWM |
+| --- | ---: | ---: | ---: |
+| Initial Off | 57 | 303 | 0 / 0 |
+| On | 57 | 303 | 6 / 2 |
+| On | 57 | 200 | 3 / 6 |
+| On | 254 | 143 | 0 / 22 |
+| On | 254 | 344 | 22 / 0 |
+| On | 1 | 143 | 0 / 1 |
+| On | 1 | 344 | 1 / 0 |
+| Final Off | 57 | 303 | 0 / 0 |
+
+The following software reboot returned `CoreSw` and preserved Off/57/303.
+At 10,496 ms uptime, zero PWM and `verify` passed, with output failures, storage
+failures and recoveries all zero. Wi-Fi remained unconfigured, as expected.
+These are controller acknowledgements and register checks, not new meter or
+physical LED measurements. Private receipt: `local/board2-bench-20260929.log`.
+
+The board's own stable QR was read through the explicit USB command and rendered
+locally as terminal blocks and a private PNG. Discovery name is `Key Right F414`.
+No first-board credentials or NVS were copied. Home commissioning and the final
+Home control check remain pending; a continuous private serial capture is active
+in `local/board2-home-controls-20260929.log`.
 
 ## LED-connected acceptance pending
 
