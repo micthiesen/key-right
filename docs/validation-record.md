@@ -133,9 +133,16 @@ were not supplied. These near-zero readings apply with the LED panels absent.
 
 For the On comparison, the agent commanded On at level 57, 303 mired and
 verified warm/cool PWM 6/2, acknowledged On, and no faults at uptime 775,527 ms.
-The board is being held On for readings across the same pairs of pins.
-Per-connector On voltages are pending. Connector letters have not yet been
+Michael then measured **approximately 13.3 V DC across each of F-1, F-2, W-1,
+and W-2**. This establishes an unloaded voltage change between commanded Off
+and On on all four connectors; it does not establish LED current, PWM duty,
+brightness, or warm/cool mixing under load. Connector letters have not yet been
 confirmed as physical warm/cool channel assignments.
+
+The agent returned the board to Off, with successful register verification,
+acknowledged Off, no faults, and zero output/storage failures at uptime
+858,296 ms. Confirmation that all four unloaded connector voltages return near
+zero is requested.
 
 ## LED-connected acceptance pending
 
