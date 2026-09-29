@@ -5,9 +5,10 @@
 Key Right contains a portable `no_std` control/PCA9635 core, an in-memory host
 simulator, and a separate ESP32-C3 Matter workspace for the installed
 **ESP32-C3_MINI_V1**. The wired assembly has powered up and received the real
-firmware, with the LEDs disconnected. USB diagnostics work; bench diagnosis of
-the PCA acknowledgement failure continues. See [hardware.md](hardware.md) for
-the measured connections and [the validation record](validation-record.md) for
+firmware, with the LEDs disconnected. USB diagnostics work; after the PCA
+acknowledgement failure, Michael found the field guide's signal wiring wrong.
+Corrected connections are pending in [hardware.md](hardware.md); see
+[the validation record](validation-record.md) for
 results.
 
 The board configuration is:

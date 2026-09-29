@@ -78,7 +78,8 @@ with LEDs disconnected; Michael measured 3.345 V at the ESP. USB confirmed a
 C3 revision v0.4 with 4 MiB flash. The full original flash was backed up and
 the real image flashed successfully. The arena fix subsequently brought up the
 hardware USB console. PCA operations fail with an I²C acknowledgement error;
-there is no successful register readback yet. These physical results are
+Michael subsequently found the field guide's signal connections incorrect.
+Corrected wiring and successful register readback are pending. These results are
 separate from the software checks above; bench testing remains in progress.
 
 Use [bench bring-up](bench-bring-up.md) for the initial sequence and record

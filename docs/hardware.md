@@ -30,29 +30,35 @@ pad.
 
 ## Exact five-wire map
 
+**Signal map withdrawn, 2026-09-28:** during bench diagnosis Michael found the
+field guide's data-line connections incorrect. Corrected SDA/SCL/OE connection
+points and which end was wrong have not yet been supplied. Do not wire from
+the previous U4 pad counts or ESP row positions. Remove bench power and USB for
+rewiring, then verify each complete signal path before powered testing resumes.
+
 Orient the Key Light board with the **white power resistors to the left** and the
 **removed U4 module footprint below the PCA9635**. Count only U4's horizontal top
-row; these are physical pad positions, not a module datasheet's pad numbers.
+row when documenting the corrected map; physical pad positions and module
+datasheet pad numbers are distinct.
 
 | Signal | Key Light connection | C3 board pad | Function |
 | --- | --- | --- | --- |
 | Power | J6 / DEBUG, top-left pad; reported 3.37 V | `3.3` | Direct regulated supply, not a GPIO |
 | Ground | J8 / UART, top pad of the left of its two three-pad columns | `G` | Common ground |
-| SDA | U4 top row, second pad from left; continuity to PCA9635 pin 27 | `4` | GPIO4, I²C SDA |
-| SCL | U4 top row, first pad from left; continuity to PCA9635 pin 26 | `5` | GPIO5, I²C SCL |
-| OE | U4 top row, fifth pad from right; continuity to PCA9635 pin 23 | `6` | GPIO6, active-low output enable |
+| SDA | Corrected board point pending; chip reference is PCA9635 pin 27 | Printed `4`; physical position pending | Current firmware: GPIO4, I²C SDA |
+| SCL | Corrected board point pending; chip reference is PCA9635 pin 26 | Printed `5`; physical position pending | Current firmware: GPIO5, I²C SCL |
+| OE | Corrected board point pending; chip reference is PCA9635 pin 23 | Printed `6`; physical position pending | Current firmware: GPIO6, active-low output enable |
 
-On the C3's **back/label side with USB-C at the top**, `G` is second down on the
-left, `3.3` third down on the left, `4` fourth down on the left, `5` at the top
-right, and `6` second down on the right. The printed numbers are GPIO numbers,
-not Arduino `D` aliases. OE is one of the installed five wires, not an optional
-connection or a permanently grounded substitute.
+The GPIO numbers above describe the flashed firmware, not validated physical
+wiring. Use printed board labels and continuity to establish the corrected map;
+do not infer row positions from the component-side photo. OE remains part of the
+five-wire design, not an optional connection or permanently grounded substitute.
 
 ## Reported electrical measurements
 
-These measurements were supplied in the 2026-09-28 handoff. They establish the
-installation's reported connection points and electrical baseline; they were not
-performed by the implementation agent.
+These historical measurements were supplied in the 2026-09-28 handoff and were
+not performed by the implementation agent. They do not validate the signal map
+now contradicted by Michael's bench inspection.
 
 | Measurement | Reported result |
 | --- | ---: |
@@ -72,8 +78,9 @@ brownout detection enabled and record reset reasons during bench testing.
 
 ## GPIO, USB, and flash constraints
 
-Keep GPIO4/SDA, GPIO5/SCL, GPIO6/OE, and the 100 kHz bus rate centralized and fixed
-in the board configuration. GPIO4/5/6 have alternate JTAG functions; explicitly
+Current firmware assigns GPIO4/SDA, GPIO5/SCL, and GPIO6/OE at 100 kHz. Reconcile
+those centralized assignments with the corrected wiring before further powered
+tests. GPIO4/5/6 have alternate JTAG functions; explicitly
 assign their GPIO/I²C functions and do not select external pad JTAG on them.
 Use native USB Serial/JTAG on GPIO18/19 for programming and the bidirectional
 console. It is not a USB-OTG/TinyUSB mass-storage or DFU interface. Leave other
@@ -155,5 +162,6 @@ power rule were incorporated from the
 That handoff cites Michael's completed probing worksheet and
 `Elgato_Key_Light_C3_Wiring_Field_Guide.pdf`; those attachments are not in this
 repository. The handoff text is the available record of their reported findings.
-The current [bench guide](bench-bring-up.md) uses this reported map and keeps
-unperformed tests separate from established measurements.
+Michael subsequently reported the guide's signal wiring incorrect. The current
+[bench guide](bench-bring-up.md) requires the corrected map and fresh end-to-end
+continuity before further powered tests; earlier pad positions are withdrawn.

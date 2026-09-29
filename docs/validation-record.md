@@ -5,6 +5,12 @@ This record covers Michael's original full-size Elgato Key Light and its wired
 credentials out of this file. Distinguish reported measurements, firmware
 evidence, controller acknowledgements, and observed light output.
 
+**Current wiring correction:** after the bus voltage checks, Michael reported
+that the field guide was wrong and all data-line connections need fixing.
+Corrected SDA/SCL/OE points and which board end was wrong are pending. The prior
+signal map is withdrawn; earlier continuity reports do not validate the present
+wiring. Powered tests must wait for the corrected map and end-to-end checks.
+
 ## Reported baseline, 2026-09-28
 
 The measurements below were recorded in the
@@ -33,9 +39,9 @@ radio load or the PCA's physical output behavior.
 
 Michael separately reported on **2026-09-28** that wiring was finished and the
 assembly was ready for bench-PSU testing and flashing. **The LED panels are not
-connected.** The completed five-wire map is documented in
-[hardware.md](hardware.md): J6/DEBUG 3.37 V to `3.3`, J8/UART ground to `G`,
-U4 SDA to GPIO4, U4 SCL to GPIO5, and U4 OE to GPIO6. The installed design has no
+connected.** The initially reported signal map was later found incorrect;
+[hardware.md](hardware.md) tracks its replacement. Reported power is J6/DEBUG
+3.37 V to `3.3`, with J8/UART ground to `G`. The installed design has no
 buck converter or added pull-ups. At that point, powered operation, flashing,
 USB, I²C, and optical tests of the completed assembly were still pending.
 

@@ -17,13 +17,18 @@ product goals.
 - `scripts/check.sh` and `scripts/check-firmware.sh` are host and MCU gates.
 
 The installed board is marked ESP32-C3_MINI_V1, not an official MINI-1U module.
-GPIO4 is SDA, GPIO5 SCL, and GPIO6 active-low PCA OE. OE must be open-drain:
+Current firmware assigns GPIO4 to SDA, GPIO5 to SCL, and GPIO6 to active-low PCA OE.
+On 2026-09-28 Michael found the field guide's signal connections incorrect.
+The physical SDA/SCL/OE map is withdrawn pending his corrected connections;
+do not reuse its U4 pad positions or ESP row-position instructions. Keep power
+off for rewiring and confirm end-to-end continuity before resuming powered tests.
+OE must be open-drain:
 set/release HIGH before enabling output mode, then drive LOW to enable the PCA.
 Preserve native USB on GPIO18/19; do not invent an antenna-selection GPIO.
 Stock U3 is the PCA9635 at address `0x15`, 100 kHz; stock active channels are
-LED0/warm and LED4/cool. `docs/hardware.md` owns the user-measured five-wire pad
-map and 3.37 V bus/rail readings with approximately 9.9 kΩ pull-ups. These settle
-the connection points, not physical output or power stability under radio load.
+LED0/warm and LED4/cool. `docs/hardware.md` owns the wiring correction and
+historical 3.37 V bus/rail readings with approximately 9.9 kΩ pull-ups. Earlier
+reported continuity does not validate the withdrawn signal map.
 The first board reports 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 

@@ -51,9 +51,10 @@ Chip-level reference only, not a finalized board wiring instruction:
 - Ground/VSS: pin 14; VDD: pin 28.
 - Active-low output enable: pin 23.
 
-The September 28 user measurements resolve the selected SDA/SCL/OE pads and
-report 3.37 V idle levels with approximately 9.9 kΩ signal-to-VDD resistance.
-They support retaining the existing pull-ups after module removal. Firmware
+The September 28 handoff reports 3.37 V idle levels with approximately 9.9 kΩ
+signal-to-VDD resistance, supporting retention of the existing pull-ups. Its
+selected SDA/SCL/OE pad map was later contradicted by Michael's bench inspection
+and is withdrawn pending corrected end-to-end measurements. Firmware
 emulation establishes LED0/warm and LED4/cool, address `0x15`, stock I²C setup,
 and `MODE2=0x14`; physical readback and LED behavior are still pending.
 
@@ -65,9 +66,10 @@ The [September 28 handoff in Git history](https://github.com/micthiesen/key-righ
 transcribes the user's probing worksheet and final C3 wiring guide. It identifies
 the board as `ESP32-C3_MINI_V1`, maps GPIO4/5/6 to SDA/SCL/OE, and records direct
 power from J6's 3.37 V rail. The worksheet and named C3 PDF are not stored here;
-the complete transcribed map/readings are retained in [hardware.md](hardware.md)
-and [validation-record.md](validation-record.md). Michael separately reported
-completed wiring with LEDs disconnected on September 28.
+the historical readings are retained in [validation-record.md](validation-record.md).
+Michael later found the guide's signal connections incorrect. The old physical
+map is withdrawn; [hardware.md](hardware.md) tracks its correction. LEDs remain
+disconnected during rewiring and bench work.
 
 The [ESP32-C3 datasheet](https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf)
 documents GPIO multiplexing, including the alternate pad-JTAG functions on
@@ -77,8 +79,8 @@ antenna routing or flash capacity. Do not infer an antenna GPIO or MINI-1U modul
 identity. Preserve USB GPIO18/19 and use open-drain GPIO6. The September 28
 [component-side board photo](references/photos/esp32-c3-mini-v1.png) shows the
 USB-C connector, buttons, onboard antenna component, and antenna socket. It
-does not prove RF routing or electrical function. Use the measured five-wire
-map and USB power rule in [hardware.md](hardware.md).
+does not prove RF routing or electrical function. Use the wiring correction
+status and USB power rule in [hardware.md](hardware.md).
 
 ## Original-controller research
 

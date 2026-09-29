@@ -251,8 +251,9 @@ measurements do not change what this offline analysis itself established.
 ## Current assembly path
 
 The installed C3 path removes only the Realtek module and retains the PCA9635.
-GPIO4/5/6 route SDA/SCL/active-low OE using the measured map in
-[hardware.md](../hardware.md); PCA pins 6/10 stay in place. Wiring is complete
-with LEDs disconnected. Startup/fault behavior has not been tested. The current
+Firmware currently assigns GPIO4/5/6 to SDA/SCL/active-low OE. Michael found the
+field guide's signal connections incorrect; [hardware.md](../hardware.md) tracks
+the corrected map, which is still pending. PCA pins 6/10 stay in place, and LEDs
+remain disconnected. Physical light startup/fault behavior remains untested. The current
 single-light brightness/temperature contract is in [the spec](../spec.md);
 the analysis above retains its original stock-firmware evidence and date.

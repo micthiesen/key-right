@@ -7,7 +7,10 @@ completed on 2026-09-28.
 Record each actual result and remaining check in
 [the validation record](validation-record.md); this guide is the procedure.
 
-Use the [five-wire map and measurements](hardware.md) as the connection source.
+**Wiring correction required:** Michael found the field guide's signal map
+incorrect during bench testing. Keep bench power off and USB unplugged while
+rewiring. The powered steps below apply only after the corrected SDA/SCL/OE map
+and complete-path continuity have been recorded in [hardware.md](hardware.md).
 The [component-side C3 photo](references/photos/esp32-c3-mini-v1.png) identifies
 the connector and buttons visually; it does not prove antenna routing or
 electrical wiring.
@@ -15,10 +18,12 @@ electrical wiring.
 ## 1. Prepare without power
 
 - Keep the LED panels disconnected and the board on an insulated surface.
-- Check the existing five connections: J6/DEBUG 3.37 V to `3.3`, J8/UART ground
-  to `G`, GPIO4 to SDA, GPIO5 to SCL, and GPIO6 to OE. Do not connect `5V`.
-  The measured row positions and C3 back-side orientation are in
-  [hardware.md](hardware.md#exact-five-wire-map).
+- Check power and ground: J6/DEBUG regulated supply to `3.3`, J8/UART ground
+  to `G`; do not connect `5V`. Establish the corrected SDA/SCL/OE paths from the
+  actual printed ESP GPIO labels to PCA pins 27/26/23 with power removed.
+  Current firmware uses GPIO4/5/6 respectively; reconcile that configuration
+  with the corrected wiring before power-up. Do not reuse the withdrawn row
+  positions in the earlier field guide.
 - Connect the bench PSU only to the stock lamp input with the confirmed
   polarity. The nominal input is **13 V**. Never put 13 V on a C3 pad.
   Use the bench PSU as the lamp's input source, with the ordinary adapter
@@ -146,11 +151,11 @@ state; `on` enables the configured output. Confirm the real image reports
 hardware mode. Simulation mode and simulated register values cannot pass the
 PCA checks, even though they use the same console and Matter control paths.
 
-Do resistance or continuity checks only with power removed. No repeat
-measurement is required merely to accept the user's existing 9.9 kΩ pull-up or
-pad-continuity results. A meter reading alone does not establish I²C timing or
-the absence of short rail transients. No test in this disconnected-LED stage
-can prove emitted light, darkness, temperature, or safe startup.
+Do resistance or continuity checks only with power removed. Because the field
+guide's signal map was found wrong, check each complete corrected signal path;
+the earlier pad-continuity report cannot validate it. A meter reading alone does
+not establish I²C timing or the absence of short rail transients. No test in this
+disconnected-LED stage can prove emitted light, darkness, temperature, or safe startup.
 
 ## 5. Pairing and the next physical checks
 
