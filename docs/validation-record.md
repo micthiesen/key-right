@@ -70,7 +70,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | U4 signal-wiring correction | Michael reports OE = top-row pad 5 from left (1-based), SCL = rightmost, SDA = second from right; ESP ends correct. First board rewired, signal-pin continuity and shorts checked by Michael. Powered PCA readback now passes on this board. Second board rework completion not yet reported |
 | USB after first-board rework | Initially no device in serial nodes, `ioreg`, or `system_profiler SPUSBHostDataType`, despite BOOT/RESET and reported red power LED. USB watcher then captured connection activity; Michael identified a position-sensitive cable and adjusted it. `/dev/cu.usbmodem101` now answers as the original `KR-88:56:a6:39:ec:f4`. Initial status at 346,199 ms uptime reports `ChipPowerOn`, acknowledged Off, and no output/storage fault. No reflash was needed. Michael reports power is good; no new numerical rail reading or PSU CV/CC indication supplied |
 | C3 chip identity and detected flash ID/capacity | ESP32-C3 revision v0.4, 40 MHz crystal, 4 MiB flash detected by espflash; raw flash ID was not printed |
-| C3 firmware commit, build target, image/partition fit | Current normal real `hardware-light` image is `c21825c`, `riscv32imc-unknown-none-elf`; 1,916,368 / 4,063,232 app-partition bytes, linked stack 57,912 bytes. Both software gates and flash preflights passed. Initially flashed `fb241df`, then arena fix `ec1cff9`; temporary radio-diagnostic images were replaced by this normal image |
+| C3 firmware commit, build target, image/partition fit | Current normal real `hardware-light` image is `db228e2`, `riscv32imc-unknown-none-elf`; 1,915,936 / 4,063,232 app-partition bytes, linked stack 58,256 bytes. Both software gates and flash preflights passed. Initially flashed `fb241df`, then arena fix `ec1cff9`; temporary radio-diagnostic images were replaced by this normal image |
 | Read-only serial inspection and flash-helper preflight | Passed `sh scripts/flash.sh --info /dev/cu.usbmodem1101`; no flash write. macOS identified Espressif USB VID `0x303a`, PID `0x1001`, 12 Mb/s. Holding BOOT, tapping RESET, then releasing BOOT exposed USB and produced the accessory prompt |
 | Bench-PSU connection/polarity, voltage setting, current limit | User reports 13 V supply enabled; current limit/current draw and CV/CC indication not supplied |
 | Power/USB isolation arrangement used | User opened a USB-C cable and disconnected its larger red conductor. With USB alone, no ESP power indication/enumeration was reported. USB data works with bench power. VBUS isolation has not been independently measured |
@@ -81,7 +81,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | Powered bus DC levels at the ESP | Before rework, Michael reported GPIO4 3.4 V and GPIO5 3.34 V relative to ESP G. Neither appeared held low. The HAL enables internal pull-ups, so these readings did not establish end-to-end continuity or I²C timing. Michael subsequently confirmed corrected signal-pin continuity during rework |
 | GPIO6 open-drain release HIGH before output enable; LOW enables configured outputs | Steady levels passed: Michael measured blue/OE to black/GND at 3.34 V after verified Off and 0.01 V after acknowledged On with register verification. Returned to verified Off afterward. Startup/reset transitions remain unmeasured |
 | PCA individual address `0x15`, setup writes and critical-register readback | Passed after corrected U4 wiring: Off and ten On frames read back and verified, including full MODE/PWM/group/LEDOUT registers. Before rework these commands failed with an I²C acknowledgement error. See the post-rework results below |
-| BLE/Wi-Fi activity, loaded rail, brownout/reset behavior | BLE commissioning reached certificate setup. Wi-Fi scans see the intended AP, but association failed with `NoAccessPointFound`; the discovery candidate awaits a fresh Home retry. Radio-load rail stability and brownout/reset behavior remain pending |
+| BLE/Wi-Fi activity, loaded rail, brownout/reset behavior | Wi-Fi joins SyNet-2G and acquires IPv4/IPv6. Home completed its first fabric but timed out on the second. Two temporary test controllers subsequently commissioned separate fabrics successfully and were removed. Radio-load rail stability and brownout/reset behavior remain pending |
 
 ### First-board post-rework register checks
 
@@ -262,6 +262,17 @@ Home's exact second-fabric flow over an existing CASE session. Both temporary
 fabrics were removed successfully at 04:38:52–53, and both controllers exited.
 No light-On command, AP setting change, or NVS erase was used. Serial evidence:
 `local/mdns-probe-window.log`. The remaining Home timeout is unresolved.
+
+The named-discovery/QR image `db228e2` then flashed with NVS preserved. At
+33,675 ms uptime it had automatically rejoined Wi-Fi at -53 dBm with IPv4 and
+local-IP ready, one connection attempt, and zero output/storage/recovery or
+network-timeout counters. Off and PCA verification passed. Live AP capture and
+an IPv4 multicast query verified `DN=Key Right ECF4` in the new mDNS
+advertisement. The actual BLE name and Home picker label remain unobserved.
+The explicit USB QR command reopened pairing and generated a private local PNG;
+the payload/image is deliberately omitted here. Serial capture is
+`local/pairing-named-qr-retry.log`; five-minute AP captures are in
+`/tmp/key-right-home-retry-20260929/`.
 
 ## LED-connected acceptance pending
 
