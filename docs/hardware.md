@@ -63,6 +63,11 @@ an optional connection or permanently grounded substitute.
 
 ## Reported electrical measurements
 
+The four two-pin LED connectors are labelled `F-1`, `F-2`, `W-1`, and `W-2`
+(Michael, 2026-09-28). Keep their labels when recording unloaded measurements;
+the letters alone do not establish warm/cool channel assignments. See the
+[validation record](validation-record.md) for Off/On probe results.
+
 These historical measurements were supplied in the 2026-09-28 handoff and were
 not performed by the implementation agent. They do not validate the old signal
 map or replace post-rework checks of the corrected connections above.

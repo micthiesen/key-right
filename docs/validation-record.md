@@ -13,7 +13,7 @@ Michael reports that the first board's rework is complete, the specific signal
 paths and absence of shorts are confirmed, and it is connected and powered.
 The second board's rework completion is not yet reported. After Michael adjusted
 the cable, the first board returned on `/dev/cu.usbmodem101` and passed powered
-PCA register checks. It is left at acknowledged Off, level 57, 303 mired.
+PCA register checks. Subsequent OE and connector probing is recorded below.
 The earlier results below precede rework unless explicitly marked otherwise.
 
 ## Reported baseline, 2026-09-28
@@ -122,8 +122,20 @@ measurement; no On command was sent in that failed attempt. At Michael's next
 request, USB responded and On was acknowledged/verified at uptime 589,497 ms.
 After his 0.01 V reading, Off and register verification passed at uptime
 648,953 ms, with acknowledged Off, level 57, 303 mired, no fault, and zero output
-or storage failures. One unloaded LED-connector Off voltage measurement is now
-requested, to be followed by an On comparison at the same probe positions.
+or storage failures.
+
+### Unloaded LED-connector probing
+
+Michael identified all four connectors as `F-1`, `F-2`, `W-1`, and `W-2`.
+With the firmware acknowledged Off, he measured **0.002–0.008 V DC across the
+two pins of every connector**. Individual connector values within that range
+were not supplied. These near-zero readings apply with the LED panels absent.
+
+For the On comparison, the agent commanded On at level 57, 303 mired and
+verified warm/cool PWM 6/2, acknowledged On, and no faults at uptime 775,527 ms.
+The board is being held On for readings across the same pairs of pins.
+Per-connector On voltages are pending. Connector letters have not yet been
+confirmed as physical warm/cool channel assignments.
 
 ## LED-connected acceptance pending
 
