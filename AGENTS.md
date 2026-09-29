@@ -68,6 +68,11 @@ firmware does not couple them or promise simultaneous output. The former
 power, level, temperature, pairing, and startup intent across normal resets and
 flashes. Keep intended, acknowledged, and measured physical output distinct.
 Network recovery must preserve intent and cannot be claimed from simulated tests.
+The first board (`KR-88:56:a6:39:ec:f4`) successfully joined Apple Home on
+2026-09-28 with two persisted Home fabrics. Preserve both; temporary test
+controllers were already removed. Routine bench checks must not unpair this
+commissioned board or erase its NVS. See `docs/validation-record.md` for
+successful commissioning evidence and the remaining physical checks.
 
 Use Rust, Cargo, rustfmt, Clippy, and Rust tests. Follow `../triplet` and
 `../stillair` for compatible embedded conventions and preserve the pinned Matter

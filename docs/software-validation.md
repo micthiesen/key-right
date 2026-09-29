@@ -153,6 +153,13 @@ left at acknowledged Off. The [validation record](validation-record.md) tracks
 per-board rework and exact register results. These results are separate
 from the software checks above; bench testing remains in progress.
 
+The first board subsequently joined Apple Home successfully. Both Home fabrics
+completed commissioning and persisted, and Michael confirmed successful addition
+using the locally generated QR. Final read-only status and PCA verification
+passed with Off intent and no hardware/storage fault. Both Home fabrics are
+retained. This establishes bench commissioning, not loaded output or long-term
+network reliability.
+
 Use [bench bring-up](bench-bring-up.md) for the initial sequence and record
 results in [the validation record](validation-record.md). Loaded rail behavior,
 startup, physical output, closed-housing radio performance, one Home tile per

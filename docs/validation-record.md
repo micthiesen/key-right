@@ -5,6 +5,10 @@ This record covers Michael's original full-size Elgato Key Light and its wired
 credentials out of this file. Distinguish reported measurements, firmware
 evidence, controller acknowledgements, and observed light output.
 
+**Current Home status:** Michael confirmed successful addition of the first
+board on 2026-09-28. Both Home fabrics completed commissioning and were persisted.
+Retain both fabrics. LEDs remain disconnected and loaded acceptance is pending.
+
 **Current wiring correction:** after the bus voltage checks, Michael identified
 the error at the Key Light's U4 pads and confirmed the ESP end is correct. On
 U4's top row, OE is pad 5 counting from 1 at the left, SCL is rightmost, and SDA
@@ -81,7 +85,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | Powered bus DC levels at the ESP | Before rework, Michael reported GPIO4 3.4 V and GPIO5 3.34 V relative to ESP G. Neither appeared held low. The HAL enables internal pull-ups, so these readings did not establish end-to-end continuity or I²C timing. Michael subsequently confirmed corrected signal-pin continuity during rework |
 | GPIO6 open-drain release HIGH before output enable; LOW enables configured outputs | Steady levels passed: Michael measured blue/OE to black/GND at 3.34 V after verified Off and 0.01 V after acknowledged On with register verification. Returned to verified Off afterward. Startup/reset transitions remain unmeasured |
 | PCA individual address `0x15`, setup writes and critical-register readback | Passed after corrected U4 wiring: Off and ten On frames read back and verified, including full MODE/PWM/group/LEDOUT registers. Before rework these commands failed with an I²C acknowledgement error. See the post-rework results below |
-| BLE/Wi-Fi activity, loaded rail, brownout/reset behavior | Wi-Fi joins SyNet-2G and acquires IPv4/IPv6. Home completed its first fabric but timed out on the second. Two temporary test controllers subsequently commissioned separate fabrics successfully and were removed. Radio-load rail stability and brownout/reset behavior remain pending |
+| BLE/Wi-Fi activity, loaded rail, brownout/reset behavior | Wi-Fi joins SyNet-2G and acquires IPv4/IPv6. Home now completes both fabrics; Michael confirms successful addition. Earlier temporary test-controller fabrics were removed before Home pairing. Radio-load rail stability and brownout/reset behavior remain pending |
 
 ### First-board post-rework register checks
 
@@ -261,7 +265,7 @@ two-fabric setup through PASE and operational discovery, but does not reproduce
 Home's exact second-fabric flow over an existing CASE session. Both temporary
 fabrics were removed successfully at 04:38:52–53, and both controllers exited.
 No light-On command, AP setting change, or NVS erase was used. Serial evidence:
-`local/mdns-probe-window.log`. The remaining Home timeout is unresolved.
+`local/mdns-probe-window.log`. At that point the Home timeout remained unresolved.
 
 The named-discovery/QR image `db228e2` then flashed with NVS preserved. At
 33,675 ms uptime it had automatically rejoined Wi-Fi at -53 dBm with IPv4 and
@@ -273,6 +277,33 @@ The explicit USB QR command reopened pairing and generated a private local PNG;
 the payload/image is deliberately omitted here. Serial capture is
 `local/pairing-named-qr-retry.log`; five-minute AP captures are in
 `/tmp/key-right-home-retry-20260929/`.
+
+### Apple Home success
+
+Michael reported that the QR attempt worked. Serial logs show fabric 1's
+Commissioning Complete at 04:44:08 UTC and fabric 2's at 04:44:18, followed by
+persisted fabric/network settings, Home label updates, and primed subscriptions.
+Both AP-interface captures cover the attempt, with 60 IPv6 Matter UDP packets
+(24 ESP replies), two operational mDNS identities, and zero capture drops.
+The unsupported optional OTA writes did not prevent completion. Home later
+removed its initial subscription with `InvalidSubscription`; the second had
+primed and was not removed in the retained capture. This does not establish
+long-term notification reliability.
+
+The actual private QR image decoded successfully in CoreImage, and independent
+Base38/header checks matched the installed discriminator and unchanged setup
+credential. The successful attempt also started with Wi-Fi already connected
+from preserved settings. These observations do not isolate QR scanning, naming,
+or retained networking as the cause of success; no AP setting changed.
+
+The final read-only console check at 491,439 ms uptime reported intended and
+acknowledged Off, level 57, 303 mired, Wi-Fi connected at -64 dBm, IPv4/local-IP
+ready, one connection attempt, zero network timeouts/restarts, and no
+output/storage/recovery fault. PCA `verify` passed. Serial and AP captures were
+closed after success. Both Home fabrics remain intact; no subsequent reboot,
+unpairing, or NVS erase was performed. Status receipt:
+`local/home-paired-status.log`. Home tile controls, power-cycle recovery, the
+second physical board, and loaded light behavior remain separate checks.
 
 ## LED-connected acceptance pending
 
