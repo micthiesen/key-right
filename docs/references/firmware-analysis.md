@@ -228,9 +228,9 @@ The later September 28 handoff reports 3.37 V bus/rail readings and approximatel
 9.9 kΩ pull-ups. Michael subsequently corrected its U4 signal-pad map; use his
 correction in [hardware.md](../hardware.md). The
 [validation record](../validation-record.md) records the successful C3 flash and
-USB console, failed PCA acknowledgement before rewiring, and pending rework of
-both boards. Radio-load rail stability, physical light startup, and LED output
-remain unverified. Later observations do not change what this offline analysis
+USB console, failed PCA acknowledgement before rewiring, and per-board rework
+and subsequent checks. Radio-load rail stability, physical light startup, and
+LED output remain unverified. Later observations do not change what this offline analysis
 itself established.
 
 ## Other research and observation limits
@@ -255,8 +255,9 @@ itself established.
 The installed C3 path removes only the Realtek module and retains the PCA9635.
 Firmware currently assigns GPIO4/5/6 to SDA/SCL/active-low OE. Michael found the
 field guide's U4 signal connections incorrect and supplied the corrected map in
-[hardware.md](../hardware.md). The ESP end is correct; rework of both boards is
-in progress. PCA pins 6/10 stay in place, and LEDs
+[hardware.md](../hardware.md). The ESP end is correct; the
+[validation record](../validation-record.md) tracks each board's rework and tests.
+PCA pins 6/10 stay in place, and LEDs
 remain disconnected. Physical light startup/fault behavior remains untested. The current
 single-light brightness/temperature contract is in [the spec](../spec.md);
 the analysis above retains its original stock-firmware evidence and date.

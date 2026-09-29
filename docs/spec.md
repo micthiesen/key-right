@@ -27,7 +27,8 @@ Keep the existing Rust architecture and compatible Stillair-derived Matter
 dependency set. The September 28 handoff supplies the actual board identity,
 initial five-wire map, and user measurements. Michael corrected the field guide's
 U4 signal-pad positions during bench testing; the ESP end remains correct.
-[hardware.md](hardware.md) owns the corrected map, with rewiring in progress.
+[hardware.md](hardware.md) owns the corrected map; the
+[validation record](validation-record.md) tracks each board's rework and tests.
 The user selected one light per lamp, Home grouping, and a low-light range
 capped at stock nominal 10%.
 [Signed stock-firmware analysis](references/firmware-analysis.md) remains the
@@ -37,7 +38,7 @@ lamp design, not a general channel-discovery or calibration platform.
 | Item | Project requirement or evidence | Remaining limit |
 | --- | --- | --- |
 | ESP board | `ESP32-C3_MINI_V1`, target `esp32c3` | Read chip identity and flash capacity before writing; plan for 4 MiB, no PSRAM |
-| Power and signal wiring | Five-wire interface with corrected U4 pad map in hardware.md; ESP assignments unchanged | Finish and continuity-check both boards' rework before powered tests; radio-load rail behavior unverified |
+| Power and signal wiring | Five-wire interface with corrected U4 pad map in hardware.md; ESP assignments unchanged | Finish and continuity-check each board's rework before its powered tests; radio-load rail behavior unverified |
 | PCA address and bus | Seven-bit `0x15`, 100 kHz, from stock firmware | Physical I²C acknowledgement/readback pending |
 | Output configuration | Stock `MODE2=0x14`; individual PWM; LED0 warm, LED4 cool | Physical bank response and off-state pending |
 | Brightness range | Stock nominal 1% through 10%, mapped across Home's nonzero brightness range | Stock scale, not measured optical brightness or raw electrical PWM duty |

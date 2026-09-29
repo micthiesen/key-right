@@ -32,9 +32,11 @@ pad.
 
 **Corrected U4 signal map, 2026-09-28:** Michael identified the error at the
 Key Light's U4 pads, confirmed the ESP connections are correct, and supplied the
-map below. He is changing both boards; rework completion and post-rework checks
-have not yet been reported. Remove bench power and USB for rewiring, then check
-each complete signal path before powered testing resumes.
+map below. He has confirmed the first board's rework, signal-pin continuity,
+and absence of shorts; the second board remains in progress. The
+[validation record](validation-record.md) owns per-board status and powered
+results. Remove bench power and USB for rewiring, then check each complete
+signal path before powered testing resumes.
 
 Orient the Key Light board with the **white power resistors to the left** and the
 **removed U4 module footprint below the PCA9635**. Count only U4's horizontal top

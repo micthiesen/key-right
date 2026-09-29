@@ -20,16 +20,18 @@ The installed board is marked ESP32-C3_MINI_V1, not an official MINI-1U module.
 Current firmware assigns GPIO4 to SDA, GPIO5 to SCL, and GPIO6 to active-low PCA OE.
 On 2026-09-28 Michael corrected the field guide's U4 pad map: top-row OE is
 pad 5 counting from 1 at the left, SCL is rightmost, and SDA is second from
-right. The ESP end is correct and remains GPIO4/5/6 for SDA/SCL/OE. Rewiring
-both boards is in progress; keep power off and confirm end-to-end continuity
-before resuming powered tests. `docs/hardware.md` owns the physical map.
+right. The ESP end is correct and remains GPIO4/5/6 for SDA/SCL/OE. Keep power
+off for rework and confirm end-to-end continuity before powered tests.
+`docs/hardware.md` owns the physical map; `docs/validation-record.md` owns
+per-board rework and testing status. Accept Michael's reported continuity and
+short checks; do not request them again without contradictory evidence.
 OE must be open-drain:
 set/release HIGH before enabling output mode, then drive LOW to enable the PCA.
 Preserve native USB on GPIO18/19; do not invent an antenna-selection GPIO.
 Stock U3 is the PCA9635 at address `0x15`, 100 kHz; stock active channels are
 LED0/warm and LED4/cool. `docs/hardware.md` records historical 3.37 V bus/rail
 readings with approximately 9.9 kΩ pull-ups. The corrected pad map is user
-reported; post-rework continuity and powered PCA readback remain pending.
+reported; successful powered PCA readback must be established separately.
 The first board reports 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 

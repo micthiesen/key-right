@@ -9,8 +9,11 @@ evidence, controller acknowledgements, and observed light output.
 the error at the Key Light's U4 pads and confirmed the ESP end is correct. On
 U4's top row, OE is pad 5 counting from 1 at the left, SCL is rightmost, and SDA
 is second from right. ESP GPIO4/SDA, GPIO5/SCL, and GPIO6/OE remain unchanged.
-He is changing both boards; completion and post-rework continuity are pending.
-The results below precede that rework unless explicitly marked otherwise.
+Michael reports that the first board's rework is complete, the specific signal
+paths and absence of shorts are confirmed, and it is connected and powered.
+The second board is still being reworked. The Mac currently sees no USB device
+or serial port for the first board; post-rework PCA testing awaits reconnection.
+The earlier results below precede rework unless explicitly marked otherwise.
 
 ## Reported baseline, 2026-09-28
 
@@ -61,7 +64,8 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | Check or session detail | Result |
 | --- | --- |
 | Date, operator, stock-board revision | 2026-09-28; Michael operating the bench, agent inspecting macOS/serial; stock-board revision not supplied |
-| U4 signal-wiring correction | Michael reports OE = top-row pad 5 from left (1-based), SCL = rightmost, SDA = second from right; ESP ends correct. Rework planned for both boards; completion, continuity, and post-rework PCA tests pending |
+| U4 signal-wiring correction | Michael reports OE = top-row pad 5 from left (1-based), SCL = rightmost, SDA = second from right; ESP ends correct. First board rewired, signal-pin continuity and shorts checked by Michael, connected and powered. Second board rework pending; no post-rework PCA result yet |
+| USB after first-board rework | No `/dev/cu.usbmodem*` device, and no attached ESP in `ioreg -p IOUSB` or `system_profiler SPUSBHostDataType`. No post-rework control command reached the board; cable reseat and RESET requested |
 | C3 chip identity and detected flash ID/capacity | ESP32-C3 revision v0.4, 40 MHz crystal, 4 MiB flash detected by espflash; raw flash ID was not printed |
 | C3 firmware commit, build target, image/partition fit | Current real `hardware-light` image is `ec1cff9`, `riscv32imc-unknown-none-elf`; 1,914,272 / 4,063,232 app-partition bytes, linked stack 57,912 bytes; both software gates and both image-fit checks passed. Initially flashed `fb241df` before the arena fix |
 | Read-only serial inspection and flash-helper preflight | Passed `sh scripts/flash.sh --info /dev/cu.usbmodem1101`; no flash write. macOS identified Espressif USB VID `0x303a`, PID `0x1001`, 12 Mb/s. Holding BOOT, tapping RESET, then releasing BOOT exposed USB and produced the accessory prompt |
@@ -70,8 +74,8 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | First power-up, current draw, 3.3 V rail under load | User reports ESP LEDs lit, red plus flashing blue, with 13 V bench power; measured 3.345 V between ESP `3.3` and `G` during the powered USB session. Current draw and radio-load measurements pending; this is not a rail-stability pass |
 | Original firmware backup | Full 4,194,304-byte read completed and digest verified by espflash before writing. SHA-256 `9a4b8a001b605d24bac52dfb157656d1f16ef8a06726842cd546046466378daa`; private local copy under `~/Library/Application Support/key-right/backups/2026-09-28-c3-first-flash/`, outside Git |
 | Flashing, native USB console, boot/reset reasons | Initial flash succeeded; first console request timed out. After manual RESET, captured `Out of bump memory` panic and `TG0WDT_SYS_RST` loop. Enlarged Matter's static arena from 20,000 bytes to 32 KiB, reflashed with NVS preserved; USB `status` then succeeded at 9.6, 20.5, 63.8, and 107.974 seconds uptime, reset `CoreUsbUart`. No storage failures reported |
-| GPIO4/5 assignment and 100 kHz bus operation | Configured in real firmware; PCA bus reports `AcknowledgeCheckFailed(Unknown)`. Electrical checks pending; timing not measured |
-| Powered bus DC levels at the ESP | Michael reports GPIO4/SDA 3.4 V and GPIO5/SCL 3.34 V relative to ESP G. Neither appears held low. The HAL enables internal pull-ups, so these readings do not establish end-to-end continuity or I²C timing; checks from the newly wired ESP pads to PCA SDA/SCL are pending |
+| GPIO4/5 assignment and 100 kHz bus operation | Configured in real firmware; before rework, PCA bus reported `AcknowledgeCheckFailed(Unknown)`. Michael confirms corrected signal-pin continuity; post-rework I²C operation and timing still unmeasured |
+| Powered bus DC levels at the ESP | Before rework, Michael reported GPIO4 3.4 V and GPIO5 3.34 V relative to ESP G. Neither appeared held low. The HAL enables internal pull-ups, so these readings did not establish end-to-end continuity or I²C timing. Michael subsequently confirmed corrected signal-pin continuity during rework |
 | GPIO6 open-drain release HIGH before output enable; LOW enables configured outputs | Pending |
 | PCA individual address `0x15`, setup writes and critical-register readback | Failed: `off` and `registers` returned `KR ERR Failure`; `verify` returned `KR ERR InvalidState`. Logs identify I²C acknowledgement failure. Status retains intended Off, level 57, 303 mired, `acknowledged=None`, `fault=Output`; no successful register readback |
 | BLE/Wi-Fi activity, loaded rail, brownout/reset behavior | Pending |

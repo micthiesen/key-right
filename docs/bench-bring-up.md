@@ -7,11 +7,12 @@ completed on 2026-09-28.
 Record each actual result and remaining check in
 [the validation record](validation-record.md); this guide is the procedure.
 
-**U4 rewiring in progress:** Michael supplied the corrected signal map in
+**Corrected U4 map:** Michael supplied the signal map in
 [hardware.md](hardware.md): top-row OE is fifth from left, SCL rightmost, and
 SDA second from right. The ESP ends remain correct. Keep bench power off and
 USB unplugged while moving the U4 wires on both boards. The powered steps below
-follow rework completion and complete-path continuity checks.
+follow each board's rework and complete-path continuity checks; consult the
+[validation record](validation-record.md) for completed checks.
 The [component-side C3 photo](references/photos/esp32-c3-mini-v1.png) identifies
 the connector and buttons visually; it does not prove antenna routing or
 electrical wiring.

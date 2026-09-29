@@ -79,9 +79,9 @@ C3 revision v0.4 with 4 MiB flash. The full original flash was backed up and
 the real image flashed successfully. The arena fix subsequently brought up the
 hardware USB console. PCA operations fail with an I²C acknowledgement error;
 Michael subsequently corrected the field guide's U4 signal map and confirmed
-the ESP end is correct. Both boards' rework and successful post-rework register
-readback are pending. These results are separate from the software checks above;
-bench testing remains in progress.
+the ESP end is correct. The [validation record](validation-record.md) tracks
+per-board rework and subsequent register checks. These results are separate
+from the software checks above; bench testing remains in progress.
 
 Use [bench bring-up](bench-bring-up.md) for the initial sequence and record
 results in [the validation record](validation-record.md). Loaded rail behavior,
