@@ -141,8 +141,15 @@ confirmed as physical warm/cool channel assignments.
 
 The agent returned the board to Off, with successful register verification,
 acknowledged Off, no faults, and zero output/storage failures at uptime
-858,296 ms. Confirmation that all four unloaded connector voltages return near
-zero is requested.
+858,296 ms. Michael confirmed that all four connector voltages returned near
+zero, as before. The unloaded Off/On/Off connector check passes. The lamp
+remains at acknowledged Off, level 57, 303 mired; connected-LED behavior and
+startup transients remain unverified.
+
+After completing the unloaded checks, `commissioning code` succeeded and opened
+the pairing window for the first board. The private code was returned to Michael
+without a serial capture file and is omitted here. Apple Home commissioning,
+Wi-Fi operation, and the tile controls are awaiting user testing.
 
 ## LED-connected acceptance pending
 
