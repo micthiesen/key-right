@@ -182,9 +182,13 @@ Off/On/Off, Home controls and a cold power cycle passed earlier bench checks.
 The final image additionally passed Wi-Fi reconnection, two full transport
 recreations within one boot, watchdog restoration of saved On and software-
 reboot restoration of saved Off. Software version 4 distinguishes it from the
-rejected intermediate images. Home's card subsequently reverted to an older
-30% indication while the device remained Off with 60% remembered. Reporting
-acceptance is reopened; do not treat the initial short Home check as a final pass.
+rejected intermediate images. Home's card temporarily reverted to an older
+30% indication while the device remained Off with 60% remembered. Its controller
+re-established a subscription about 4.6 minutes after the last deliberate reset,
+and the card caught up without another firmware restart. The final check after
+resubscription passed: Michael confirmed the card held 45% and then stayed Off
+without a spinner; PCA readback and firmware state agreed. The first board is
+ready for unpowered reassembly, left with saved Off.
 
 These live results are separate from the build/test gates above. The
 [validation record](validation-record.md) retains their measurements, exact

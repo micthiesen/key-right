@@ -10,7 +10,8 @@ and one cold power-cycle restoration. It retains both Home fabrics. Michael
 considers bench probing complete; LEDs reconnect during unpowered reassembly.
 Firmware 0.1.3 passed real Wi-Fi reconnection, two transport recreations in one
 boot, watchdog recovery of saved On and reboot recovery of saved Off.
-Home card reporting after those resets remains under investigation.
+After delayed Home resubscription, the final target/Off card check also passed.
+The first board is ready for unpowered reassembly, with saved Off.
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 
@@ -362,6 +363,15 @@ All three diagnostics passed on the first board with firmware 0.1.3. A separate
 software reboot restored saved Off and zero PWM. These controlled checks do not
 establish recovery from every AP outage or driver failure, or closed-housing
 radio performance. Exact results are in [the validation record](validation-record.md).
+
+After deliberate resets, verify local state separately from Home's cached card.
+In the final bench session, Wi-Fi/IP returned within seconds but Home's controller
+did not prime a new subscription until about 4.6 minutes after the last reboot.
+The card temporarily showed an old 30% target while the board held verified Off,
+then caught up without another restart or re-pairing. Allow the controller to
+reconnect and test controls after subscription recovery. Do not keep restarting
+a healthy device because of a stale card, or treat radio readiness alone as proof
+that Home has resumed reports.
 
 The `bench-light` image uses the same runtime, Matter, console, and network
 paths with simulated output. Status identifies simulation and register values

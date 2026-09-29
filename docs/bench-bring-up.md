@@ -7,12 +7,13 @@ and one cold power-cycle restoration passed. It retains both Home fabrics.
 Do not repeat those measurements without new fault evidence.
 
 Firmware 0.1.3 passed Wi-Fi reconnection, repeated full transport recreation,
-watchdog restoration of saved On and reboot restoration of saved Off. Home card
-reporting after those resets is still under investigation. The second board
-proceeds through chip and capacity preflight, flashing, commissioning and live
-operation without another routine meter-probing sequence. Record each board's
-actual image and results in [the validation record](validation-record.md). Passing the first board does
-not establish the second board's behavior.
+watchdog restoration of saved On and reboot restoration of saved Off. After
+Home re-established its subscription, the final target/Off card check passed.
+The first board is ready for unpowered reassembly with saved Off. The second
+board proceeds through chip and capacity preflight, flashing, commissioning
+and live operation without another routine meter-probing sequence. Record each
+board's actual image and results in [the validation record](validation-record.md).
+Passing the first board does not establish the second board's behavior.
 
 ## 1. Power and preparation
 

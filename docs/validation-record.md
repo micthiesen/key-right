@@ -10,9 +10,10 @@ board on 2026-09-28. Both Home fabrics completed commissioning and were persiste
 Home power, brightness and temperature commands passed unloaded bench checks,
 including control after one cold power cycle and measured Off at all four
 connectors. Michael considers probing complete. Firmware 0.1.3 passed the
-controlled recovery checks below, but Home card reporting after those resets
-remains under investigation. Retain both fabrics and hold reassembly until that
-discrepancy is resolved. LED-connected acceptance remains pending.
+controlled recovery checks below. After Home re-established its subscription,
+Michael confirmed that 45% held on the main card and Off stayed Off without a
+spinner. The board is ready for unpowered reassembly with firmware 0.1.3 and
+saved Off. Retain both fabrics. LED-connected acceptance remains pending.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
 the error at the Key Light's U4 pads and confirmed the ESP end is correct. On
@@ -460,7 +461,7 @@ After the final reboot, a direct operational mDNS query returned both persisted
 Matter identities. Home commands reached the board, and settled PCA readbacks
 matched the selected targets. Michael initially confirmed that controls held
 and Off remained Off for 20 seconds, then reported that the main card repeatedly
-returned to 30%. This reopens the reporting acceptance check.
+returned to 30%. This reopened the reporting acceptance check.
 
 Michael's last deliberate changes were approximately 60%, then Off. Continuous
 USB status from 05:46:21 UTC showed Off, remembered level 153/254 (about 60%),
@@ -471,9 +472,28 @@ also contains stale-session retries at 05:44:32–35 and no subscription until
 controller accepts the initial report and the subscription response is sent.
 This is evidence of delayed controller resubscription, but does not by itself
 prove which cached value Home displayed or that every subsequent report was
-received. The board did not spontaneously
-turn On in this continuous capture. Private receipt:
+received. The board did not spontaneously turn On in this continuous capture.
+Private receipt:
 `local/home-controls-bench-20260929.log`.
+
+Michael subsequently confirmed that the card showed Off. Firmware stayed Off
+at level 153/254 and 303 mired throughout the intervening capture, with zero
+PWM verified. No restart, reflash, command or Home re-pairing was needed to
+resolve the displayed mismatch. This supports delayed Home resubscription and
+cached state after the deliberate resets; it does not establish an exact
+controller recovery deadline.
+
+The final check ran with that subscription established and no further reset.
+At 05:53:13 UTC, Home selected level 115/254 (45%), then temperature 144 mired
+at 05:53:15. Settled On readback was warm/cool `0/10`, and `verify` passed.
+At 05:53:45 Home selected Off; zero PWM and `verify` passed with the same
+remembered level and temperature. Uptime continued, Wi-Fi and IPv4/IPv6 stayed
+ready, and no output/storage fault, retry or transport restart occurred.
+Michael confirmed that the main card held 45% during the 30-second On check,
+then stayed Off without a spinner during the requested one-minute Off check.
+This passes the final Home control check and releases the first board for
+unpowered reassembly. Firmware remains `b43e6bd` / 0.1.3; subsequent documentation
+commits do not require another flash. No further connector probing is owed.
 
 ## LED-connected acceptance pending
 
