@@ -6,11 +6,12 @@ powered PCA readback, steady OE, unloaded connector Off/On/Off, Home controls,
 and one cold power-cycle restoration passed. It retains both Home fabrics.
 Do not repeat those measurements without new fault evidence.
 
-Firmware 0.1.1 hardens target reporting, startup restoration and local recovery;
-it needs its own live verification. The second board proceeds through chip and
-capacity preflight, flashing, commissioning and live operation without another
-routine meter-probing sequence. Record each board's actual image and results
-in [the validation record](validation-record.md). Passing the first board does
+Firmware 0.1.3 passed Wi-Fi reconnection, repeated full transport recreation,
+watchdog restoration of saved On and reboot restoration of saved Off. Home card
+reporting after those resets is still under investigation. The second board
+proceeds through chip and capacity preflight, flashing, commissioning and live
+operation without another routine meter-probing sequence. Record each board's
+actual image and results in [the validation record](validation-record.md). Passing the first board does
 not establish the second board's behavior.
 
 ## 1. Power and preparation
@@ -53,7 +54,7 @@ The identity query does not write flash, but entering the ROM loader may reset
 the MCU. Require **ESP32-C3** and **at least 4 MiB detected flash** on each board.
 The layout uses NVS at `0x9000..0x19000` and one factory application at
 `0x20000..0x400000`. The offline image check validates the target, partition fit
-and minimum 16 KiB linked stack. Do not force an unknown identity or capacity.
+and minimum 32 KiB linked stack. Do not force an unknown identity or capacity.
 
 Flash the real image after preflight passes:
 

@@ -94,8 +94,13 @@ deadlines, capped 5–60-second transport retry delays, and the 15-second watchd
 Boot storage errors reported by the adapter as `StdIoError` retry while feeding
 the watchdog; firmware never requests an erase or factory reset. The SDK may
 repair storage pages. Malformed decoded records remain explicit faults.
-Firmware 0.1.1 recovery and reporting changes require their own live results;
-earlier bench passes do not establish the new image's behavior.
+Retain the pinned local patches in `firmware/vendor/`: Trouble's GAP device
+name must support repeated service construction, and the Matter capacity
+profile is 15 subscriptions, 20 IM buffers and two responders. The 100 KiB radio
+heap and 32 KiB transport arena remain unchanged. Capacity increases consume
+main-stack space; a 22,080-byte layout passed the former gate but failed live
+startup. Keep at least 32 KiB reserved and verify actual boot and recovery after
+memory-layout changes. See `docs/validation-record.md` for per-image results.
 
 Use Rust, Cargo, rustfmt, Clippy, and Rust tests. Follow `../triplet` and
 `../stillair` for compatible embedded conventions and preserve the pinned Matter
@@ -116,7 +121,7 @@ sh scripts/check-firmware.sh
 Use `cargo fmt --all` at the root and `cargo fmt` in `firmware/app`. The MCU gate
 builds explicit real and simulated C3 images for `riscv32imc-unknown-none-elf`.
 Keep the C3 heap split across ordinary and reclaimed bootloader RAM. The MCU
-gate and flash helper reject linked main-stack reservations below 16 KiB;
+gate and flash helper reject linked main-stack reservations below 32 KiB;
 passing that gate does not measure runtime stack or heap use.
 Keep the separate Matter transport arena at 32 KiB; 20,000 bytes panicked on
 the first real C3 boot. LEDs cannot be reconnected until lamp reassembly;

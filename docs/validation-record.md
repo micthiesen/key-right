@@ -7,10 +7,12 @@ evidence, controller acknowledgements, and observed light output.
 
 **Current Home status:** Michael confirmed successful addition of the first
 board on 2026-09-28. Both Home fabrics completed commissioning and were persisted.
-Home power, brightness and temperature commands now pass unloaded bench checks,
-including control after one cold power cycle. The final state is verified Off,
-with all four LED connectors measured near zero. Retain both fabrics. The board
-is ready for unpowered reassembly; LED-connected acceptance remains pending.
+Home power, brightness and temperature commands passed unloaded bench checks,
+including control after one cold power cycle and measured Off at all four
+connectors. Michael considers probing complete. Firmware 0.1.3 passed the
+controlled recovery checks below, but Home card reporting after those resets
+remains under investigation. Retain both fabrics and hold reassembly until that
+discrepancy is resolved. LED-connected acceptance remains pending.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
 the error at the Key Light's U4 pads and confirmed the ESP end is correct. On
@@ -77,7 +79,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | U4 signal-wiring correction | Michael reports OE = top-row pad 5 from left (1-based), SCL = rightmost, SDA = second from right; ESP ends correct. First board rewired, signal-pin continuity and shorts checked by Michael. Powered PCA readback now passes on this board. Second board rework completion not yet reported |
 | USB after first-board rework | Initially no device in serial nodes, `ioreg`, or `system_profiler SPUSBHostDataType`, despite BOOT/RESET and reported red power LED. USB watcher then captured connection activity; Michael identified a position-sensitive cable and adjusted it. `/dev/cu.usbmodem101` now answers as the original `KR-88:56:a6:39:ec:f4`. Initial status at 346,199 ms uptime reports `ChipPowerOn`, acknowledged Off, and no output/storage fault. No reflash was needed. Michael reports power is good; no new numerical rail reading or PSU CV/CC indication supplied |
 | C3 chip identity and detected flash ID/capacity | ESP32-C3 revision v0.4, 40 MHz crystal, 4 MiB flash detected by espflash; raw flash ID was not printed |
-| C3 firmware commit, build target, image/partition fit | Current normal real `hardware-light` image is `db228e2`, `riscv32imc-unknown-none-elf`; 1,915,936 / 4,063,232 app-partition bytes, linked stack 58,256 bytes. Both software gates and flash preflights passed. Initially flashed `fb241df`, then arena fix `ec1cff9`; temporary radio-diagnostic images were replaced by this normal image |
+| C3 firmware commit, build target, image/partition fit | Current normal real `hardware-light` image is `b43e6bd`, firmware 0.1.3 / Matter software version 4, `riscv32imc-unknown-none-elf`; 1,930,256 / 4,063,232 app-partition bytes, linked stack 41,200 bytes. Both software gates and flash preflights passed. Earlier images and rejected qualification builds are recorded below |
 | Read-only serial inspection and flash-helper preflight | Passed `sh scripts/flash.sh --info /dev/cu.usbmodem1101`; no flash write. macOS identified Espressif USB VID `0x303a`, PID `0x1001`, 12 Mb/s. Holding BOOT, tapping RESET, then releasing BOOT exposed USB and produced the accessory prompt |
 | Bench-PSU connection/polarity, voltage setting, current limit | User reports 13 V supply enabled; current limit/current draw and CV/CC indication not supplied |
 | Power/USB isolation arrangement used | User opened a USB-C cable and disconnected its larger red conductor. With USB alone, no ESP power indication/enumeration was reported. USB data works with bench power. VBUS isolation has not been independently measured |
@@ -367,6 +369,111 @@ The session changed documentation only. Both `sh scripts/check.sh` and
 `sh scripts/check-firmware.sh` passed again; no image was flashed during these
 Home control checks. Actual loaded output and startup observations remain open
 in the acceptance table below.
+
+## Final firmware qualification, 2026-09-28 local / September 29 UTC
+
+Firmware `0.1.1` / Matter software version 2, commit `691b0a7`, flashed with
+NVS preserved. The first status restored saved Off, level 4 and 146 mired,
+rejoined Wi-Fi, and reported no output or storage fault. A direct operational
+mDNS query found both Home identities. Michael's subsequent Home commands
+changed the durable targets and verified PCA output, including On at level
+150 (59%) and 172 mired. Firmware intent did not revert to level 4 when Home's
+card displayed 1% with a persistent spinner. Michael reported that restarting
+the Home app cleared the spinner. This does not isolate its cause or establish
+long-term reporting reliability. UniFi reported a 100/100 Wi-Fi experience,
+-66 dBm and channel 1 during the symptom; firmware RSSI was around -60 dBm.
+
+The `test wifi` diagnostic caused an actual station disconnect. Association
+returned within 4.1 seconds, local IPv6 within 6.2 seconds, and IPv4 within
+16.5 seconds. Uptime continued; On, level 150 and 172 mired were unchanged,
+PCA readback remained `3/14`, and `verify` passed without output/storage faults.
+
+The subsequent `test network` uncovered a real failure in the installed
+dependency: rebuilding the BLE GAP service initialized a process-global
+`StaticCell` for the device name twice. The second transport start panicked at
+05:23:47 UTC. The watchdog reset the MCU (`CoreMwdt0`), after which saved On,
+level 77 and 172 mired, both fabrics and Wi-Fi returned. This was a failed
+transport-recreation check, despite successful watchdog recovery. The fix is
+a narrowly patched copy of the same locked `trouble-host` release; it must
+pass repeated live recreation before qualification is complete.
+
+Candidate `0.1.2` / software version 3, commit `00ac734`, passed all software
+gates but was rejected after live boot. Its 16-subscription/32-buffer pool left
+22,080 bytes of linked main stack. The boot capture reported stored-fabric
+loading followed by a load-access exception at `0x403836ca`, with fault address
+`0x00000004`. USB logs were dropped, so this does not establish the precise
+initialization stage. The truncated dump cannot prove stack overflow; the
+reduced headroom is a memory-layout concern. The previous known
+working `0.1.0` ELF was temporarily restored without erasing NVS. At 30,029 ms
+uptime it again reported On, level 77 and 172 mired, connected Wi-Fi and IPv4/IPv6,
+and no output/storage fault. The flash gate now rejects reservations below
+32 KiB and has a regression rejecting this candidate's exact 22,080-byte layout.
+This stronger static gate still does not replace live validation.
+
+Private serial receipts: `local/final-firmware-live-20260929.log`,
+`local/final-spinner-20260929.log`,
+`local/final-firmware-recovery-20260929.log`, and the existing Home control log.
+No extra connector probing or LED connection was performed.
+
+### Accepted memory profile and repeated recovery, firmware 0.1.3
+
+Commit `b43e6bd`, Matter software version 4, uses 15 subscriptions, 20 IM
+buffers and two responders. The real image is 1,930,256 bytes, with 41,200
+bytes of linked main stack. The radio heap and transport arena are unchanged.
+All software gates, including 75 application host tests, and both flash-image
+preflights passed. NVS was preserved while flashing.
+
+At 8,981 ms uptime, the real image restored On, level 77 and 172 mired without
+an output/storage fault. Wi-Fi and IPv6 were ready by 12,077 ms, and IPv4 by
+21,286 ms. PCA readback was `1/8`; `verify` passed. This accepts the revised
+memory layout for the observed boot path, not every possible stack depth.
+
+Two consecutive `test network` operations within that same MCU boot passed.
+The first used a five-second retry delay and had Wi-Fi/IPv6/IPv4 ready within
+12.5 seconds; the second used the expected ten-second backoff, with IPv6 ready
+within 17.5 seconds and IPv4 within 27.8 seconds. Uptime continued and the
+restart counter advanced to two. Saved and acknowledged On/77/172 and PCA `1/8`
+were unchanged, with successful verification and no output/storage faults.
+Neither attempt required a watchdog reset, reflash or re-pairing.
+
+The subsequent actual station disconnect (`test wifi`) re-associated within
+4.1 seconds and restored IPv6/IPv4 within 6.2 seconds. Its connection-attempt
+counter advanced from three to four; the MCU stayed in the same boot and
+retained the same verified output. These are controlled local recovery checks,
+not a long AP outage, a reproduced missing-TX-completion fault, or a closed-
+housing radio test. No AP setting was changed.
+
+The deliberate watchdog stall reset the MCU in about 15 seconds. Reset reason
+was `CoreMwdt0`; saved On/77/172 returned, PCA `1/8` verified, and IPv6/IPv4
+were ready by 21,384 ms into the new boot. No output/storage fault occurred.
+Michael subsequently changed the controls in Home between checks. The agent
+then persisted Off at the new level 41 and 303 mired and verified zero PWM.
+A normal software reboot (`CoreSw`) restored that exact Off/41/303 state;
+Wi-Fi and IPv6/IPv4 were ready by 11,158 ms. Zero PWM and `verify` passed, and
+the state remained Off in the final 33,309 ms snapshot. These checks establish
+saved On and Off restoration on this image, without another meter-probing
+sequence. Reset receipts are in `local/final-reset-check-20260929.log`.
+
+### Home card reporting after the final reset
+
+After the final reboot, a direct operational mDNS query returned both persisted
+Matter identities. Home commands reached the board, and settled PCA readbacks
+matched the selected targets. Michael initially confirmed that controls held
+and Off remained Off for 20 seconds, then reported that the main card repeatedly
+returned to 30%. This reopens the reporting acceptance check.
+
+Michael's last deliberate changes were approximately 60%, then Off. Continuous
+USB status from 05:46:21 UTC showed Off, remembered level 153/254 (about 60%),
+303 mired, acknowledged Off and no output/storage or network-restart faults.
+The last 30% target had been level 77 before the reset tests. The post-reset log
+also contains stale-session retries at 05:44:32–35 and no subscription until
+05:48:13.896, primed at 05:48:14.403. The pinned SDK logs priming after the
+controller accepts the initial report and the subscription response is sent.
+This is evidence of delayed controller resubscription, but does not by itself
+prove which cached value Home displayed or that every subsequent report was
+received. The board did not spontaneously
+turn On in this continuous capture. Private receipt:
+`local/home-controls-bench-20260929.log`.
 
 ## LED-connected acceptance pending
 

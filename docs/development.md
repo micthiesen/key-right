@@ -8,9 +8,30 @@ simulator, and a separate ESP32-C3 Matter workspace for the installed
 levels, unloaded connector Off/On/Off, Home power/brightness/temperature controls,
 and one cold power-cycle restoration. It retains both Home fabrics. Michael
 considers bench probing complete; LEDs reconnect during unpowered reassembly.
-Firmware 0.1.1 reporting/recovery hardening needs separate live verification.
+Firmware 0.1.3 passed real Wi-Fi reconnection, two transport recreations in one
+boot, watchdog recovery of saved On and reboot recovery of saved Off.
+Home card reporting after those resets remains under investigation.
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
+
+Keep the pinned SDK versions. The repository carries `trouble-host` 0.6.0 in
+`firmware/vendor/` with a small, tested GAP device-name lifetime patch, selected
+by both application and host-test Cargo manifests. Its original global
+`StaticCell` panicked on a second network/BLE transport start. The
+[patch record](../firmware/vendor/trouble-host-0.6.0/KEY-RIGHT-PATCH.md) preserves
+source provenance and the exact correction; do not remove this patch when
+updating lockfiles unless the replacement passes the repeated-build tests.
+
+The Matter build enables 15 subscriptions, 20 interaction-model buffers and
+two concurrent request responders.
+The pinned core supports at least five fabrics and advertises three subscriptions
+per fabric. Each active subscription retains a buffer; additional buffers must
+remain available for two request RX/TX pairs and publishing. The pinned
+`rs-matter-stack` copy adds these capacity choices and asserts that they cover
+the advertised minima. Keep these limits together and run the C3 linked-stack
+gate after changing either. This corrects the default capacity mismatch; it is
+not proof that the observed Home spinner
+was caused by exhaustion.
 
 The board configuration is:
 
@@ -69,7 +90,7 @@ The host gate checks formatting, strict Clippy, Rust tests, simulator behavior,
 and the Python console, flash, and USB watcher helpers. The firmware gate runs
 application host tests, formatting and Clippy, release builds for the real and
 simulated C3 images, the optional radio-diagnostic real image, and a minimum
-16 KiB linked main-stack check.
+32 KiB linked main-stack check.
 These gates require no board or credentials. Use `cargo fmt --all` at the root
 and `cargo fmt` inside `firmware/app`. Record actual gate outcomes in
 [software validation](software-validation.md).
@@ -337,7 +358,10 @@ unpairs the board. Observe recovery through status and Home, including unchanged
 intent and fabrics. `test watchdog` requires settled, verified output and stalls
 the firmware task until the 15-second watchdog resets it. The PCA retains its
 previous frame during that stall; this is a recovery check, not an Off command.
-These commands have not yet established live recovery for firmware 0.1.1.
+All three diagnostics passed on the first board with firmware 0.1.3. A separate
+software reboot restored saved Off and zero PWM. These controlled checks do not
+establish recovery from every AP outage or driver failure, or closed-housing
+radio performance. Exact results are in [the validation record](validation-record.md).
 
 The `bench-light` image uses the same runtime, Matter, console, and network
 paths with simulated output. Status identifies simulation and register values

@@ -1,6 +1,6 @@
 # Software verification
 
-## 2026-09-28 final firmware hardening, 0.1.1
+## 2026-09-28 final firmware hardening, 0.1.3
 
 The current target is `esp32c3` / `riscv32imc-unknown-none-elf`, with one Matter
 Color Temperature Light per physical lamp. Home's nonzero brightness range maps
@@ -14,7 +14,7 @@ connected board; final-flash observations belong in the validation record.
 | Check | Result |
 | --- | --- |
 | `sh scripts/check.sh` | Passed: formatting, strict Clippy, 26 Rust tests, CLI simulation, and 29 Python tests |
-| `sh scripts/check-firmware.sh` | Passed: 71 application host tests, formatting, strict host/C3 Clippy, real/simulated/radio-diagnostic release builds, and linked-stack checks |
+| `sh scripts/check-firmware.sh` | Passed: 75 application host tests, formatting, strict host/C3 Clippy, real/simulated/radio-diagnostic release builds, and linked-stack checks |
 | Stock mixing, level-57 reference frames, low/high limits, and quantization tests | Passed; includes full-frame verification, reset/readback faults, and updates without repeated OE blanking |
 | Single-light commands, persistence migration, and recovery tests | Passed; includes independent transitions, Stop, timed Off, global scenes, validated scene staging, single-record recall, and failures |
 | Home target reporting | Real cluster getter tests cover target values during fades, immediate Off intent, minimum-level Off, fault reads and recovery. Report-loop tests cover data versions, countdown-only updates and completion |
@@ -33,19 +33,19 @@ has 4,063,232 bytes available within the planned 4 MiB flash layout.
 
 | Image | Application image bytes | Partition used | Linked main-stack reservation |
 | --- | ---: | ---: | ---: |
-| `key-right` | 1,931,808 | 47.54% | 57,600 bytes |
-| `key-right-bench` | 1,912,448 | 47.07% | 58,968 bytes |
+| `key-right` | 1,930,256 | 47.51% | 41,200 bytes |
+| `key-right-bench` | 1,910,864 | 47.03% | 42,568 bytes |
 
 Both configure 102,400 bytes of heap: 36,080 bytes in ordinary DRAM and 66,320
 bytes in the SDK's reclaimed bootloader RAM. A portable ELF gate rejects a
-linked main-stack reservation below 16 KiB. The initial C3 layout reserved only
+linked main-stack reservation below 32 KiB. The initial C3 layout reserved only
 4,424 bytes; the heap split above addresses that finding. Linked
 reservations are not runtime stack or heap high-water measurements.
 
 The pinned Matter/ESP revisions are unchanged. The new direct
 `embassy-net-driver = 0.2.0` dependency names the trait already used by the
 SDK; it does not upgrade the network stack. Basic Information software version
-is 2 / `0.1.1` so the installed image can be identified.
+is 4 / `0.1.3` so the installed image can be identified.
 
 The first review found target/current fade confusion, minimum-level On/Off and
 Off-fade relighting errors, stale connection flags, and an unrecoverable boot
@@ -54,14 +54,32 @@ and recovery-history accounting; regression tests cover those corrections.
 Original-code scratch tests failed for target getter, minimum-level Off,
 Off-fade relighting, and startup On overriding saved Off.
 
+Live testing then exposed a repeated BLE GAP initialization panic. The vendored
+`trouble-host` 0.6.0 changes only the device-name storage lifetime. Three tests
+cover repeated peripheral/central construction, distinct borrowed names,
+read-only access and byte-length limits; the original crate fails these tests.
+The build uses a pinned `rs-matter-stack` capacity patch: 15 subscriptions,
+20 IM buffers and two request responders. This covers five fabrics with three
+subscriptions each, two active RX/TX request pairs and a publishing buffer.
+Compiled assertions check the actual unified features against the advertised
+minimum. The earlier 16/32 profile passed the old 16 KiB stack gate but failed
+live boot with 22,080 bytes reserved. That exact layout is now rejected by a
+regression test and a 32 KiB minimum. The dump did not prove the precise crash
+cause; static headroom is a guard, not a runtime stack measurement. The 32 KiB
+transport arena and 100 KiB heap are unchanged; runtime high-water usage remains
+unmeasured.
+Fresh review found no additional issue in the patch, its provenance or capacity
+sizing. Both final-image preflights passed. Dependency versions were preserved.
+
 The first physical boot of `fb241df` panicked with `Out of bump memory` in
 `rs-matter-stack` and entered a watchdog reset loop. Commit `ec1cff9` increases
 the separate static Matter transport arena from 20,000 bytes to 32 KiB, costing
 12,768 bytes of linked stack space while leaving the 100 KiB heap unchanged.
 After reflashing, the hardware USB console answered beyond 100 seconds uptime
 with no storage fault. Review found no additional defect in that change;
-commissioning, transport-restart behavior, and runtime memory high-water usage
-remain unverified.
+commissioning and transport restarts were still unverified at that point.
+Later live results are recorded separately; runtime memory high-water usage
+remains unmeasured.
 
 Review also corrected cancellation of a pending fade to Off, stale flash-image
 selection under inherited Cargo settings, and scene/global-state bookkeeping.
@@ -158,26 +176,22 @@ can map multiple slider settings to the same register values.
 
 ## Physical status
 
-On September 28, the completed assembly powered from the 13 V bench supply
-with LEDs disconnected; Michael measured 3.345 V at the ESP. USB confirmed a
-C3 revision v0.4 with 4 MiB flash. The full original flash was backed up and
-the real image flashed successfully. The arena fix subsequently brought up the
-hardware USB console. PCA operations initially failed with an I²C acknowledgement
-error. Michael corrected the field guide's U4 signal map, rewired the first
-board, and adjusted an intermittent USB cable. The first board then passed Off
-and ten On-frame register checks, with no output or storage failures, and was
-left at acknowledged Off. The [validation record](validation-record.md) tracks
-per-board rework and exact register results. These results are separate
-from the software checks above; bench testing remains in progress.
+The first board is running firmware 0.1.3 with both Home fabrics retained. Its
+corrected wiring, real PCA readback, steady OE levels, unloaded connector
+Off/On/Off, Home controls and a cold power cycle passed earlier bench checks.
+The final image additionally passed Wi-Fi reconnection, two full transport
+recreations within one boot, watchdog restoration of saved On and software-
+reboot restoration of saved Off. Software version 4 distinguishes it from the
+rejected intermediate images. Home's card subsequently reverted to an older
+30% indication while the device remained Off with 60% remembered. Reporting
+acceptance is reopened; do not treat the initial short Home check as a final pass.
 
-The first board subsequently joined Apple Home successfully. Both Home fabrics
-completed commissioning and persisted, and Michael confirmed successful addition
-using the locally generated QR. Final read-only status and PCA verification
-passed with Off intent and no hardware/storage fault. Both Home fabrics are
-retained. This establishes bench commissioning, not loaded output or long-term
-network reliability.
+These live results are separate from the build/test gates above. The
+[validation record](validation-record.md) retains their measurements, exact
+states, failure findings and private-log locations. Michael considers probing
+complete; the second board proceeds through flashing, commissioning and live
+operation without repeating routine connector measurements.
 
-Use [bench bring-up](bench-bring-up.md) for the initial sequence and record
-results in [the validation record](validation-record.md). Loaded rail behavior,
-startup, physical output, closed-housing radio performance, one Home tile per
-lamp, two-lamp Home grouping, and automatic recovery remain unverified.
+Loaded LED output and startup flashes, closed-housing radio performance,
+two-lamp Home grouping, sustained outages and the second board remain
+unverified. Use [bench bring-up](bench-bring-up.md) for service and reassembly.
