@@ -68,7 +68,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | U4 signal-wiring correction | Michael reports OE = top-row pad 5 from left (1-based), SCL = rightmost, SDA = second from right; ESP ends correct. First board rewired, signal-pin continuity and shorts checked by Michael. Powered PCA readback now passes on this board. Second board rework completion not yet reported |
 | USB after first-board rework | Initially no device in serial nodes, `ioreg`, or `system_profiler SPUSBHostDataType`, despite BOOT/RESET and reported red power LED. USB watcher then captured connection activity; Michael identified a position-sensitive cable and adjusted it. `/dev/cu.usbmodem101` now answers as the original `KR-88:56:a6:39:ec:f4`. Initial status at 346,199 ms uptime reports `ChipPowerOn`, acknowledged Off, and no output/storage fault. No reflash was needed. Michael reports power is good; no new numerical rail reading or PSU CV/CC indication supplied |
 | C3 chip identity and detected flash ID/capacity | ESP32-C3 revision v0.4, 40 MHz crystal, 4 MiB flash detected by espflash; raw flash ID was not printed |
-| C3 firmware commit, build target, image/partition fit | Current real `hardware-light` image is `ec1cff9`, `riscv32imc-unknown-none-elf`; 1,914,272 / 4,063,232 app-partition bytes, linked stack 57,912 bytes; both software gates and both image-fit checks passed. Initially flashed `fb241df` before the arena fix |
+| C3 firmware commit, build target, image/partition fit | Current normal real `hardware-light` image is `4fee6bc`, `riscv32imc-unknown-none-elf`; 1,915,920 / 4,063,232 app-partition bytes, linked stack 57,912 bytes. Both software gates and flash preflights passed. Initially flashed `fb241df`, then arena fix `ec1cff9`; temporary radio-diagnostic images were replaced by this normal image |
 | Read-only serial inspection and flash-helper preflight | Passed `sh scripts/flash.sh --info /dev/cu.usbmodem1101`; no flash write. macOS identified Espressif USB VID `0x303a`, PID `0x1001`, 12 Mb/s. Holding BOOT, tapping RESET, then releasing BOOT exposed USB and produced the accessory prompt |
 | Bench-PSU connection/polarity, voltage setting, current limit | User reports 13 V supply enabled; current limit/current draw and CV/CC indication not supplied |
 | Power/USB isolation arrangement used | User opened a USB-C cable and disconnected its larger red conductor. With USB alone, no ESP power indication/enumeration was reported. USB data works with bench power. VBUS isolation has not been independently measured |
@@ -79,7 +79,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | Powered bus DC levels at the ESP | Before rework, Michael reported GPIO4 3.4 V and GPIO5 3.34 V relative to ESP G. Neither appeared held low. The HAL enables internal pull-ups, so these readings did not establish end-to-end continuity or I²C timing. Michael subsequently confirmed corrected signal-pin continuity during rework |
 | GPIO6 open-drain release HIGH before output enable; LOW enables configured outputs | Steady levels passed: Michael measured blue/OE to black/GND at 3.34 V after verified Off and 0.01 V after acknowledged On with register verification. Returned to verified Off afterward. Startup/reset transitions remain unmeasured |
 | PCA individual address `0x15`, setup writes and critical-register readback | Passed after corrected U4 wiring: Off and ten On frames read back and verified, including full MODE/PWM/group/LEDOUT registers. Before rework these commands failed with an I²C acknowledgement error. See the post-rework results below |
-| BLE/Wi-Fi activity, loaded rail, brownout/reset behavior | Pending |
+| BLE/Wi-Fi activity, loaded rail, brownout/reset behavior | BLE commissioning reached certificate setup. Wi-Fi scans see the intended AP, but association failed with `NoAccessPointFound`; the discovery candidate awaits a fresh Home retry. Radio-load rail stability and brownout/reset behavior remain pending |
 
 ### First-board post-rework register checks
 
@@ -189,6 +189,13 @@ This is a discovery reliability change, not a proven pairing fix. A fresh Home
 retry must establish association, IP readiness, commissioning completion, and
 tile behavior. The disconnected-LED Off/PCA checks still pass after diagnostic
 flashes; the light intent remains Off, level 57, 303 mired.
+
+The normal `hardware-light` candidate at `4fee6bc` was then flashed with all
+preflights passed and NVS preserved. At 13,339 ms uptime it reported the expected
+identity, `CoreUsbUart` reset, acknowledged Off at level 57 / 303 mired, no output
+or storage failures, and no recovery events. Explicit `off` and `verify` both
+passed. The pairing window reopened, with a fresh capture at
+`local/pairing-discovery-retry.log`; no joining attempt had occurred at that point.
 
 ## LED-connected acceptance pending
 
