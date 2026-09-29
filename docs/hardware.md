@@ -73,6 +73,13 @@ measured approximately 13 V and the other near zero; changing temperature
 extremes swapped them. The actual panel colours remain unobserved. See the
 [validation record](validation-record.md) for the measured states and limits.
 
+The [whole-board photo](references/photos/keylight-3622.png), with the white
+power resistors at the top and DC input wires at the bottom, identifies F-1/J1
+at upper right, F-2/J3 at lower right, W-1/J5 at upper left and W-2/J4 at lower
+left. Each connector's two electrical contacts are the reference endpoints
+for the [selected 10 kΩ bleeder trial](off-glow-investigation.md). This does not
+map alternate solder pads or establish that same-bank outputs are tied together.
+
 These historical measurements were supplied in the 2026-09-28 handoff and were
 not performed by the implementation agent. They do not validate the old signal
 map or replace post-rework checks of the corrected connections above.

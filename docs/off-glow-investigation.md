@@ -73,13 +73,41 @@ path for a small off-state current and reduce voltage across the LEDs. This is
 a candidate to test, not a proven repair. It cannot correct a power stage that
 is being substantially driven On.
 
-The known connection points are **the two contacts within the same F-1, F-2,
-W-1 or W-2 LED connector**, in parallel with its connected panel load. Polarity
-does not matter. Do not connect the resistor from an output to black/GND or
-between separate connectors. These connector contacts are established; an
-alternate pair of convenient PCB solder pads has not been mapped.
+### Selected first trial: the two warm outputs
 
-Keep **10 kΩ, 0.25 W metal-film resistors** available for a controlled trial.
+Use **two 10 kΩ, 0.25 W or higher axial through-hole resistors**, one across
+each F connector. Ordinary carbon-film or metal-film parts from a standard-value
+assortment are suitable; 1% or 5% tolerance is sufficient. These are the small
+lead-ended resistors Michael calls peanut resistors. There is no polarity.
+
+In the [whole-board photo](references/photos/keylight-3622.png), orient the
+board with the eight white power resistors at the top and the DC input wires
+at the bottom. The connector reference labels are visible beside their housings:
+
+| Resistor | Connector | Location in that photo | Exact electrical endpoints |
+| --- | --- | --- | --- |
+| 10 kΩ, at least ¼ W | F-1 / J1 | Upper right white two-pin LED connector | Its two metal electrical contacts, one resistor lead to each contact's solder pad |
+| 10 kΩ, at least ¼ W | F-2 / J3 | Lower right white two-pin LED connector, above the small capacitor | Its two metal electrical contacts, one resistor lead to each contact's solder pad |
+
+These are **two separate resistors**, not one between F-1 and F-2. Each is in
+parallel with the existing LED load; leave both panel wires connected normally.
+Use the solder joints belonging to the two electrical contacts, not adjacent
+mounting holes or power-resistor pads. The underside is not photographed, so
+do not infer alternate pad locations from this view. If using another pad,
+identify its continuity to the specific connector contact with all power removed.
+
+The earlier powered tests linked F-1 and F-2 to the firmware's warm channel.
+The orange appearance makes this bank a reasonable **first trial**, not proof
+that it alone carries the unwanted current. Use both F outputs for that trial
+because we have not established that their switched nets are tied together.
+Do not treat unchanged glow as proof that a bleeder cannot help another bank.
+The W outputs are W-1/J5 (upper left) and W-2/J4 (lower left) in the same photo;
+leave those unchanged for this first trial.
+
+Do not connect a bleeder from an output to black/GND, to an ESP pin or to OE.
+Bend its leads to reach the two verified connector pads and insulate exposed
+lead length so it cannot contact the housing, adjacent pads or other wiring.
+
 At a continuous 13.3 V across one resistor, the calculated current is
 `13.3 / 10000 = 1.33 mA` and dissipation is
 `13.3² / 10000 = 17.7 mW`. These are reference values, not measured leakage or
@@ -98,11 +126,10 @@ At the next planned opening:
 
 1. Follow the [existing power/USB rules](hardware.md) and read the settled-Off
    console state. No new work is requested while the lamps remain assembled.
-2. If the software state is correct, a resistor trial across an affected
-   connector is the available intervention without inventing transistor pads.
-   Fit it only with lamp power and USB removed; insulate both leads and secure
-   it away from hot parts and the antenna. This is not an instruction to fit
-   four resistors indiscriminately.
+2. If the software state is correct, fit the selected pair of 10 kΩ resistors
+   across F-1/J1 and F-2/J3 on one lamp first. Fit them only with lamp power and
+   USB removed; insulate the leads and secure the parts away from the hot power
+   resistors and antenna. Do not fit resistors to all four outputs by default.
 3. Reconnect the panels and optical parts with power removed. After reassembly,
    compare Off in a dark room and check normal low-brightness operation.
    Record the affected connector, component and observed result.
