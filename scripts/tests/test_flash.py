@@ -138,7 +138,7 @@ class StackTests(unittest.TestCase):
         return data
 
     def test_original_small_c3_stack_fails_and_reclaimed_heap_stack_passes(self):
-        for size, accepted in ((4_424, False), (flash.MIN_STACK - 1, False), (flash.MIN_STACK, True), (70_720, True)):
+        for size, accepted in ((4_424, False), (22_080, False), (flash.MIN_STACK - 1, False), (flash.MIN_STACK, True), (70_720, True)):
             with tempfile.TemporaryDirectory(prefix="key-right-stack-test-") as directory:
                 image = Path(directory) / "firmware.elf"
                 image.write_bytes(self.elf(size))

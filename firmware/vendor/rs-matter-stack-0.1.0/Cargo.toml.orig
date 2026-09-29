@@ -1,0 +1,239 @@
+[package]
+name = "rs-matter-stack"
+version = "0.1.0"
+authors = ["ivmarkov <ivan.markov@gmail.com>"]
+edition = "2021"
+resolver = "2"
+categories = ["embedded", "hardware-support"]
+keywords = ["matter", "embedded"]
+description = "Utility for configuring and running rs-matter"
+repository = "https://github.com/sysgrok/rs-matter-stack"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+rust-version = "1.87"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[profile.release]
+opt-level = "z"
+debug = 0
+debug-assertions = false
+codegen-units = 1 # LLVM can perform better optimizations using a single thread
+lto = "fat"
+incremental = false
+overflow-checks = false
+
+[features]
+default = []
+
+# Sizing
+
+# Number of subscriptions
+max-subscriptions-32 = []
+max-subscriptions-16 = []
+max-subscriptions-15 = []
+max-subscriptions-8 = []
+max-subscriptions-7 = []
+max-subscriptions-6 = []
+max-subscriptions-5 = []
+max-subscriptions-4 = []
+max-subscriptions-3 = [] # default
+max-subscriptions-2 = []
+max-subscriptions-1 = []
+
+# Events ring-bffers' size
+events-ringbuf-size-0 = [] # default, i.e. events will not be emitted
+events-ringbuf-size-64 = []
+events-ringbuf-size-128 = []
+events-ringbuf-size-256 = []
+events-ringbuf-size-512 = []
+events-ringbuf-size-1024 = []
+events-ringbuf-size-2048 = []
+
+# Number of IM buffers
+max-im-buffers-64 = []
+max-im-buffers-32 = []
+max-im-buffers-20 = []
+max-im-buffers-16 = []
+max-im-buffers-10 = [] # default
+max-im-buffers-9 = []
+max-im-buffers-8 = []
+max-im-buffers-7 = []
+max-im-buffers-6 = []
+max-im-buffers-5 = []
+max-im-buffers-4 = []
+
+# Number of responders
+max-responders-32 = []
+max-responders-16 = []
+max-responders-8 = []
+max-responders-7 = []
+max-responders-6 = []
+max-responders-5 = []
+max-responders-4 = [] # default
+max-responders-3 = []
+max-responders-2 = []
+max-responders-1 = []
+
+# Sizing / rs-matter
+
+# Number of fabrics
+max-fabrics-32 = ["rs-matter/max-fabrics-32"]
+max-fabrics-16 = ["rs-matter/max-fabrics-16"]
+max-fabrics-8 = ["rs-matter/max-fabrics-8"]
+max-fabrics-7 = ["rs-matter/max-fabrics-7"]
+max-fabrics-6 = ["rs-matter/max-fabrics-6"]
+max-fabrics-5 = ["rs-matter/max-fabrics-5"]
+max-fabrics-4 = ["rs-matter/max-fabrics-4"]
+max-fabrics-3 = ["rs-matter/max-fabrics-3"] # default
+max-fabrics-2 = ["rs-matter/max-fabrics-2"]
+max-fabrics-1 = ["rs-matter/max-fabrics-1"]
+
+# Number of groups per fabrics
+max-groups-per-fabric-32 = ["rs-matter/max-groups-per-fabric-32"]
+max-groups-per-fabric-16 = ["rs-matter/max-groups-per-fabric-16"]
+max-groups-per-fabric-12 = ["rs-matter/max-groups-per-fabric-12"]
+max-groups-per-fabric-8 = ["rs-matter/max-groups-per-fabric-8"]
+max-groups-per-fabric-7 = ["rs-matter/max-groups-per-fabric-7"]
+max-groups-per-fabric-6 = ["rs-matter/max-groups-per-fabric-6"]
+max-groups-per-fabric-5 = ["rs-matter/max-groups-per-fabric-5"]
+max-groups-per-fabric-4 = ["rs-matter/max-groups-per-fabric-4"]
+
+# Number of group keys per fabric
+max-group-keys-per-fabric-5 = ["rs-matter/max-group-keys-per-fabric-5"]
+max-group-keys-per-fabric-4 = ["rs-matter/max-group-keys-per-fabric-4"]
+max-group-keys-per-fabric-3 = ["rs-matter/max-group-keys-per-fabric-3"]
+max-group-keys-per-fabric-2 = ["rs-matter/max-group-keys-per-fabric-2"]
+
+# Number of endpoints that can be members of a group (per fabric)
+max-group-endpoints-per-fabric-5 = ["rs-matter/max-group-endpoints-per-fabric-5"]
+max-group-endpoints-per-fabric-4 = ["rs-matter/max-group-endpoints-per-fabric-4"]
+max-group-endpoints-per-fabric-3 = ["rs-matter/max-group-endpoints-per-fabric-3"]
+max-group-endpoints-per-fabric-2 = ["rs-matter/max-group-endpoints-per-fabric-2"]
+max-group-endpoints-per-fabric-1 = ["rs-matter/max-group-endpoints-per-fabric-1"]
+
+# Number of ACL entries per fabric
+max-acls-per-fabric-32 = ["rs-matter/max-acls-per-fabric-32"]
+max-acls-per-fabric-16 = ["rs-matter/max-acls-per-fabric-16"]
+max-acls-per-fabric-8 = ["rs-matter/max-acls-per-fabric-8"]
+max-acls-per-fabric-7 = ["rs-matter/max-acls-per-fabric-7"]
+max-acls-per-fabric-6 = ["rs-matter/max-acls-per-fabric-6"]
+max-acls-per-fabric-5 = ["rs-matter/max-acls-per-fabric-5"]
+max-acls-per-fabric-4 = ["rs-matter/max-acls-per-fabric-4"] # default
+max-acls-per-fabric-3 = ["rs-matter/max-acls-per-fabric-3"]
+max-acls-per-fabric-2 = ["rs-matter/max-acls-per-fabric-2"]
+max-acls-per-fabric-1 = ["rs-matter/max-acls-per-fabric-1"]
+
+# Number of subjects per ACL entry
+max-subjects-per-acl-32 = ["rs-matter/max-subjects-per-acl-32"]
+max-subjects-per-acl-16 = ["rs-matter/max-subjects-per-acl-16"]
+max-subjects-per-acl-8 = ["rs-matter/max-subjects-per-acl-8"]
+max-subjects-per-acl-7 = ["rs-matter/max-subjects-per-acl-7"]
+max-subjects-per-acl-6 = ["rs-matter/max-subjects-per-acl-6"]
+max-subjects-per-acl-5 = ["rs-matter/max-subjects-per-acl-5"]
+max-subjects-per-acl-4 = ["rs-matter/max-subjects-per-acl-4"] # default
+max-subjects-per-acl-3 = ["rs-matter/max-subjects-per-acl-3"]
+max-subjects-per-acl-2 = ["rs-matter/max-subjects-per-acl-2"]
+max-subjects-per-acl-1 = ["rs-matter/max-subjects-per-acl-1"]
+
+# Number of targets per ACL entry
+max-targets-per-acl-32 = ["rs-matter/max-targets-per-acl-32"]
+max-targets-per-acl-16 = ["rs-matter/max-targets-per-acl-16"]
+max-targets-per-acl-8 = ["rs-matter/max-targets-per-acl-8"]
+max-targets-per-acl-7 = ["rs-matter/max-targets-per-acl-7"]
+max-targets-per-acl-6 = ["rs-matter/max-targets-per-acl-6"]
+max-targets-per-acl-5 = ["rs-matter/max-targets-per-acl-5"]
+max-targets-per-acl-4 = ["rs-matter/max-targets-per-acl-4"]
+max-targets-per-acl-3 = ["rs-matter/max-targets-per-acl-3"] # default
+max-targets-per-acl-2 = ["rs-matter/max-targets-per-acl-2"]
+max-targets-per-acl-1 = ["rs-matter/max-targets-per-acl-1"]
+
+# Number of sessions
+max-sessions-64 = ["rs-matter/max-sessions-64"]
+max-sessions-32 = ["rs-matter/max-sessions-32"]
+max-sessions-16 = ["rs-matter/max-sessions-16"] # default
+max-sessions-8 = ["rs-matter/max-sessions-8"]
+max-sessions-7 = ["rs-matter/max-sessions-7"]
+max-sessions-6 = ["rs-matter/max-sessions-6"]
+max-sessions-5 = ["rs-matter/max-sessions-5"]
+max-sessions-4 = ["rs-matter/max-sessions-4"]
+max-sessions-3 = ["rs-matter/max-sessions-3"]
+
+# Number of exchanges per session
+max-exchanges-per-session-16 = ["rs-matter/max-exchanges-per-session-16"]
+max-exchanges-per-session-8 = ["rs-matter/max-exchanges-per-session-8"]
+max-exchanges-per-session-7 = ["rs-matter/max-exchanges-per-session-7"]
+max-exchanges-per-session-6 = ["rs-matter/max-exchanges-per-session-6"]
+max-exchanges-per-session-5 = ["rs-matter/max-exchanges-per-session-5"] # default
+max-exchanges-per-session-4 = ["rs-matter/max-exchanges-per-session-4"]
+max-exchanges-per-session-3 = ["rs-matter/max-exchanges-per-session-3"]
+
+# KV Blob store buffer size (pass-through to rs-matter, which owns the buffer)
+kv-blob-store-65536 = ["rs-matter/kv-blob-store-65536"]
+kv-blob-store-32768 = ["rs-matter/kv-blob-store-32768"]
+kv-blob-store-16384 = ["rs-matter/kv-blob-store-16384"]
+kv-blob-store-8192 = ["rs-matter/kv-blob-store-8192"]
+kv-blob-store-4096 = ["rs-matter/kv-blob-store-4096"] # default
+kv-blob-store-2048 = ["rs-matter/kv-blob-store-2048"]
+kv-blob-store-1024 = ["rs-matter/kv-blob-store-1024"]
+
+# General
+log = ["dep:log", "rs-matter/log", "edge-mdns?/log"]
+defmt = ["dep:defmt", "rs-matter/defmt", "heapless/defmt", "edge-mdns?/defmt"]
+sync-mutex = ["rs-matter/sync-mutex"]
+zbus = ["rs-matter/zbus"]
+zeroconf = ["os", "rs-matter/zeroconf"]
+astro-dnssd = ["os", "rs-matter/astro-dnssd"]
+bluer = ["rs-matter/bluer"]
+rustcrypto = ["rs-matter/rustcrypto"]
+mbedtls = ["rs-matter/mbedtls"]
+openssl = ["rs-matter/openssl"]
+os = ["backtrace", "rs-matter/os", "rustcrypto", "embassy-time/std"]
+backtrace = ["std", "rs-matter/backtrace"]
+async-io-mini = ["std", "edge-nal-std/async-io-mini"]
+std = ["alloc", "rs-matter/std", "edge-nal-std"]
+alloc = ["rs-matter/alloc"]
+examples = ["log", "os", "nix", "embassy-time-queue-utils/generic-queue-64", "zeroconf", "bluer"]
+
+[dependencies]
+cfg-if = "1"
+log = { version = "0.4", default-features = false, optional = true }
+defmt = { version = "1", default-features = false, optional = true, features = ["ip_in_core"] }
+heapless = "0.9"
+enumset = { version = "1", default-features = false }
+bitflags = { version =  "2.5", default-features = false }
+scopeguard = { version = "1", default-features = false }
+embassy-futures = "0.1"
+embassy-sync = "0.8"
+embassy-time = "0.5"
+rs-matter = { version = "0.2", default-features = false }
+edge-nal = "0.7"
+edge-nal-std = { version = "0.7", optional = true }
+edge-mdns = { version = "0.8", optional = true }
+rand_core06 = { package = "rand_core", version = "0.6" }
+rand_core09 = { package = "rand_core", version = "0.9" }
+rand_chacha = { version = "0.9", default-features = false }
+
+[target.'cfg(all(unix, not(target_os = "espidf")))'.dependencies]
+bitflags = "2"
+nix = { version = "0.27", features = ["net"], optional = true }
+
+[dev-dependencies]
+static_cell = "2.1"
+futures-lite = "1"
+async-compat = "0.2"
+env_logger = "0.11"
+embassy-time-queue-utils = { version = "0.3", features = ["generic-queue-64"] }
+rand = { version = "0.8", features = ["std", "std_rng"] }
+
+[[example]]
+name = "light_eth"
+path = "examples/light_eth.rs"
+required-features = ["examples"]
+
+[[example]]
+name = "light"
+path = "examples/light.rs"
+required-features = ["examples"]

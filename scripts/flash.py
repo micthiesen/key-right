@@ -17,7 +17,10 @@ ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "firmware" / "app"
 MIN_FLASH = 4 * 1024 * 1024
 TARGET = "riscv32imc-unknown-none-elf"
-MIN_STACK = 16 * 1024
+# A 22,080-byte reservation passed the old 16 KiB gate but failed on real boot
+# while restoring Home fabrics. Keep more headroom; this is still not a runtime
+# high-water measurement and cannot replace live boot/recovery checks.
+MIN_STACK = 32 * 1024
 
 
 def elf_stack_size(data):

@@ -1,6 +1,6 @@
 [package]
 name = "key-right-app"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.88"
 publish = false
@@ -30,8 +30,13 @@ rs-matter-embassy = { git = "https://github.com/ivmarkov/rs-matter-embassy", rev
   "esp",
   "log",
   "embassy-net",
-  "max-subscriptions-16",
-  "max-im-buffers-32",
+] }
+# Size subscriptions and request buffers together while preserving C3
+# main-stack headroom. The pinned local patch adds only these capacity choices.
+rs-matter-stack = { version = "=0.1.0", default-features = false, features = [
+  "max-subscriptions-15",
+  "max-im-buffers-20",
+  "max-responders-2",
 ] }
 # rs-matter pulls a few libc symbols in through its x509 path.
 tinyrlibc = { version = "0.5", default-features = false, features = [
@@ -117,6 +122,7 @@ opt-level = 3
 [patch.crates-io]
 # Preserve the locked SDK release, fixing its one-shot GAP name allocation.
 trouble-host = { path = "../vendor/trouble-host-0.6.0" }
+rs-matter-stack = { path = "../vendor/rs-matter-stack-0.1.0" }
 esp-hal = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
 esp-rtos = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }
 esp-alloc = { git = "https://github.com/esp-rs/esp-hal", rev = "10e48dd74837bae4be663a7d1825d12875363727" }

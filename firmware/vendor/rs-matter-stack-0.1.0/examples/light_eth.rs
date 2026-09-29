@@ -1,0 +1,143 @@
+//! An example utilizing the `EthMatterStack` struct.
+//! As the name suggests, this Matter stack assembly uses Ethernet as the main transport,
+//! as well as for commissioning.
+//!
+//! Notice that it might be that rather than Ethernet, the actual L2 transport is Wifi.
+//! From the POV of Matter - this case is indistinguishable from Ethernet as long as the
+//! Matter stack is not concerned with connecting to the Wifi network, managing
+//! its credentials etc. and can assume it "pre-exists".
+//!
+//! The example implements a fictitious Light device (an On-Off Matter cluster).
+#![recursion_limit = "256"]
+
+use core::pin::pin;
+
+use log::info;
+
+use rs_matter_stack::eth::EthMatterStack;
+use rs_matter_stack::matter::crypto::{default_crypto, Crypto};
+use rs_matter_stack::matter::dm::clusters::app::on_off;
+use rs_matter_stack::matter::dm::clusters::app::on_off::test::TestOnOffDeviceLogic;
+use rs_matter_stack::matter::dm::clusters::app::on_off::OnOffHooks;
+use rs_matter_stack::matter::dm::clusters::desc;
+use rs_matter_stack::matter::dm::clusters::desc::ClusterHandler as _;
+use rs_matter_stack::matter::dm::devices::test::DAC_PRIVKEY;
+use rs_matter_stack::matter::dm::devices::test::{TEST_DEV_ATT, TEST_DEV_COMM, TEST_DEV_DET};
+use rs_matter_stack::matter::dm::devices::DEV_TYPE_ON_OFF_LIGHT;
+use rs_matter_stack::matter::dm::networks::unix::UnixNetifs;
+use rs_matter_stack::matter::dm::{Async, Dataver, Endpoint, Node};
+use rs_matter_stack::matter::dm::{EmptyHandler, EpClMatcher};
+use rs_matter_stack::matter::error::Error;
+use rs_matter_stack::matter::persist::DirKvBlobStore;
+use rs_matter_stack::matter::transport::network::mdns::zeroconf::ZeroconfMdns;
+use rs_matter_stack::matter::utils::init::InitMaybeUninit;
+use rs_matter_stack::matter::{clusters, devices};
+
+use static_cell::StaticCell;
+
+/// The amount of memory for allocating all `rs-matter-stack` futures created during
+/// the execution of the `run*` methods.
+/// This does NOT include the rest of the Matter stack.
+///
+/// The futures of `rs-matter-stack` created during the execution of the `run*` methods
+/// are allocated in a special way using a small bump allocator which results
+/// in a much lower memory usage by those.
+///
+/// If - for your platform - this size is not enough, increase it until
+/// the program runs without panics during the stack initialization.
+const BUMP_SIZE: usize = 23500;
+
+fn main() -> Result<(), Error> {
+    env_logger::init_from_env(
+        env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"),
+    );
+
+    info!("Starting...");
+
+    // Initialize the Matter stack (can be done only once),
+    // as we'll run it in this thread
+    let stack = MATTER_STACK.uninit().init_with(EthMatterStack::init(
+        &TEST_DEV_DET,
+        TEST_DEV_COMM,
+        &TEST_DEV_ATT,
+    ));
+
+    // The default crypto provider
+    let crypto = default_crypto(rand::thread_rng(), DAC_PRIVKEY);
+
+    let mut rand = crypto.weak_rand()?;
+
+    // Our "light" on-off cluster.
+    // It will toggle the light state every 5 seconds
+    let on_off = on_off::OnOffHandler::new_standalone(
+        Dataver::new_rand(&mut rand),
+        LIGHT_ENDPOINT_ID,
+        TestOnOffDeviceLogic::new(true),
+    );
+
+    // Chain our endpoint clusters with the
+    // (root) Endpoint 0 system clusters in the final handler
+    let handler = EmptyHandler
+        .chain(
+            EpClMatcher::new(
+                Some(LIGHT_ENDPOINT_ID),
+                Some(TestOnOffDeviceLogic::CLUSTER.id),
+            ),
+            on_off::HandlerAsyncAdaptor(&on_off),
+        )
+        // Each Endpoint needs a Descriptor cluster too
+        // Just use the one that `rs-matter` provides out of the box
+        .chain(
+            EpClMatcher::new(Some(LIGHT_ENDPOINT_ID), Some(desc::DescHandler::CLUSTER.id)),
+            Async(desc::DescHandler::new(Dataver::new_rand(&mut rand)).adapt()),
+        );
+
+    // Create the KV BLOB store and load any previously saved state of `rs-matter`
+    let mut store = DirKvBlobStore::new_default();
+    futures_lite::future::block_on(stack.startup(&crypto, &mut store))?;
+
+    // Wrap the KV BLOB store as a shared reference, so that it can be used both by `rs-matter` and the user
+    let kv = stack.matter().kv(store);
+
+    // Run the Matter stack with our handler
+    // Using `pin!` is completely optional, but reduces the size of the final future
+    let matter = pin!(stack.run_preex(
+        // The Matter stack needs UDP sockets to communicate with other Matter devices
+        edge_nal_std::Stack::new(),
+        // Will try to find a default network interface
+        UnixNetifs,
+        // Will use the mDNS implementation based on the `zeroconf` crate
+        ZeroconfMdns::new(),
+        // The crypto provider
+        &crypto,
+        // Our `AsyncHandler` + `AsyncMetadata` impl
+        (NODE, handler),
+        // Will persist in `<tmp-dir>/rs-matter`
+        kv,
+        // No user task future to run
+        (),
+    ));
+
+    // Schedule the Matter run
+    futures_lite::future::block_on(matter)
+}
+
+/// The Matter stack is allocated statically to avoid
+/// program stack blowups.
+static MATTER_STACK: StaticCell<EthMatterStack<BUMP_SIZE, ()>> = StaticCell::new();
+
+/// Endpoint 0 (the root endpoint) always runs
+/// the hidden Matter system clusters, so we pick ID=1
+const LIGHT_ENDPOINT_ID: u16 = 1;
+
+/// The Matter Light device Node
+const NODE: Node = Node {
+    endpoints: &[
+        EthMatterStack::<0, ()>::root_endpoint(),
+        Endpoint::new(
+            LIGHT_ENDPOINT_ID,
+            devices!(DEV_TYPE_ON_OFF_LIGHT),
+            clusters!(desc::DescHandler::CLUSTER, TestOnOffDeviceLogic::CLUSTER),
+        ),
+    ],
+};

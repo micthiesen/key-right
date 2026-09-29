@@ -24,3 +24,10 @@ Its [MIT license](firmware/vendor/trouble-host-0.6.0/LICENSE-MIT) and
 The [patch record](firmware/vendor/trouble-host-0.6.0/KEY-RIGHT-PATCH.md) identifies
 the exact upstream source and regression coverage. No dependency version was
 upgraded for this correction.
+
+`firmware/vendor/rs-matter-stack-0.1.0` retains the pinned Matter stack crate with
+two additional capacity choices for the C3. Its
+[MIT license](firmware/vendor/rs-matter-stack-0.1.0/LICENSE-MIT),
+[Apache-2.0 license](firmware/vendor/rs-matter-stack-0.1.0/LICENSE-APACHE), and
+[patch record](firmware/vendor/rs-matter-stack-0.1.0/KEY-RIGHT-PATCH.md) accompany
+the source. No dependency version was upgraded for this profile.

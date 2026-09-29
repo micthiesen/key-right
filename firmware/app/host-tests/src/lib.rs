@@ -28,6 +28,8 @@ mod commissioning_tests;
 #[cfg(test)]
 mod control_tests;
 #[cfg(test)]
+mod matter_capacity_tests;
+#[cfg(test)]
 mod network_scan_tests;
 #[cfg(test)]
 mod network_tx_tests;

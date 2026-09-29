@@ -1,0 +1,882 @@
+#![no_std]
+#![allow(async_fn_in_trait)]
+#![allow(unknown_lints)]
+#![allow(renamed_and_removed_lints)]
+#![allow(unexpected_cfgs)]
+#![allow(clippy::declare_interior_mutable_const)]
+#![allow(clippy::uninlined_format_args)]
+#![warn(clippy::large_futures)]
+#![warn(clippy::large_stack_frames)]
+#![warn(clippy::large_types_passed_by_value)]
+
+use core::fmt::Debug;
+use core::future::Future;
+use core::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6};
+use core::pin::pin;
+
+use cfg_if::cfg_if;
+
+use edge_nal::{UdpBind, UdpSplitMulticast};
+
+use embassy_futures::select::{select, select_slice};
+use embassy_time::Duration;
+
+use rs_matter::crypto::Crypto;
+use rs_matter::dm::clusters::basic_info::BasicInfoConfig;
+use rs_matter::dm::clusters::decl::basic_information::StartUp;
+use rs_matter::dm::clusters::dev_att::DeviceAttestation;
+use rs_matter::dm::clusters::gen_diag::NetifDiag;
+use rs_matter::dm::clusters::net_comm::{NetCtl, Networks};
+use rs_matter::dm::clusters::wifi_diag::WirelessDiag;
+use rs_matter::dm::networks::NetChangeNotif;
+use rs_matter::dm::{AttrChangeNotifier, AttrId, ClusterId, DataModel, EndptId};
+use rs_matter::error::{Error, ErrorCode};
+use rs_matter::im::{InteractionModel, InteractionModelState};
+use rs_matter::pairing::qr::QrTextType;
+use rs_matter::persist::{KvBlobStore, KvBlobStoreAccess};
+use rs_matter::respond::{DefaultResponder, ExchangeHandler, Responder};
+use rs_matter::sc::pase::MAX_COMM_WINDOW_TIMEOUT_SECS;
+use rs_matter::transport::exchange::MatterBuffers;
+use rs_matter::transport::network::{
+    Address, ChainedNetwork, NetworkMulticast, NetworkReceive, NetworkSend, NoNetwork,
+};
+use rs_matter::utils::init::{init, Init};
+use rs_matter::utils::select::Coalesce;
+use rs_matter::utils::sync::{DynBase, IfMutex};
+use rs_matter::{BasicCommData, Matter, MATTER_PORT};
+
+use crate::bump::Bump;
+use crate::mdns::Mdns;
+use crate::nal::NetStack;
+use crate::network::Network;
+
+#[cfg(feature = "std")]
+#[allow(unused_imports)]
+#[macro_use]
+extern crate std;
+
+#[allow(unused_imports)]
+#[macro_use]
+extern crate alloc;
+
+// This mod MUST go first, so that the others see its macros.
+pub(crate) mod fmt;
+
+pub mod ble;
+pub mod bump;
+pub mod eth;
+pub mod matter;
+pub mod mdns;
+pub mod nal;
+pub mod network;
+pub mod rand;
+pub mod udp;
+pub mod utils;
+pub mod wireless;
+
+mod private {
+    /// A marker super-trait for sealed traits
+    pub trait Sealed {}
+
+    impl Sealed for () {}
+}
+
+cfg_if! {
+    if #[cfg(feature = "max-subscriptions-32")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 32;
+    } else if #[cfg(feature = "max-subscriptions-16")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 16;
+    } else if #[cfg(feature = "max-subscriptions-15")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 15;
+    } else if #[cfg(feature = "max-subscriptions-8")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 8;
+    } else if #[cfg(feature = "max-subscriptions-7")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 7;
+    } else if #[cfg(feature = "max-subscriptions-6")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 6;
+    } else if #[cfg(feature = "max-subscriptions-5")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 5;
+    } else if #[cfg(feature = "max-subscriptions-4")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 4;
+    } else if #[cfg(feature = "max-subscriptions-3")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 3;
+    } else if #[cfg(feature = "max-subscriptions-2")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 2;
+    } else if #[cfg(feature = "max-subscriptions-1")] {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 1;
+    } else {
+        /// Max number of subscriptions
+        const MAX_SUBSCRIPTIONS: usize = 3;
+    }
+}
+
+cfg_if! {
+    if #[cfg(feature = "events-ringbuf-size-0")] {
+        /// Events ringbuf size
+        const EVENTS_RINGBUF_SIZE: usize = 0;
+    } else if #[cfg(feature = "events-ringbuf-size-64")] {
+        /// Events ringbuf size
+        const EVENTS_RINGBUF_SIZE: usize = 64;
+    } else if #[cfg(feature = "events-ringbuf-size-128")] {
+        /// Events ringbuf size
+        const EVENTS_RINGBUF_SIZE: usize = 128;
+    } else if #[cfg(feature = "events-ringbuf-size-256")] {
+        /// Events ringbuf size
+        const EVENTS_RINGBUF_SIZE: usize = 256;
+    } else if #[cfg(feature = "events-ringbuf-size-512")] {
+        /// Events ringbuf size
+        const EVENTS_RINGBUF_SIZE: usize = 512;
+    } else if #[cfg(feature = "events-ringbuf-size-1024")] {
+        /// Events ringbuf size
+        const EVENTS_RINGBUF_SIZE: usize = 1024;
+    } else if #[cfg(feature = "events-ringbuf-size-2048")] {
+        /// Events ringbuf size
+        const EVENTS_RINGBUF_SIZE: usize = 2048;
+    } else {
+        /// Events ringbuf size
+        const EVENTS_RINGBUF_SIZE: usize = 0;
+    }
+}
+
+cfg_if! {
+    if #[cfg(feature = "max-im-buffers-64")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 64;
+    } else if #[cfg(feature = "max-im-buffers-32")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 32;
+    } else if #[cfg(feature = "max-im-buffers-20")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 20;
+    } else if #[cfg(feature = "max-im-buffers-16")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 16;
+    } else if #[cfg(feature = "max-im-buffers-10")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 10;
+    } else if #[cfg(feature = "max-im-buffers-9")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 9;
+    } else if #[cfg(feature = "max-im-buffers-8")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 8;
+    } else if #[cfg(feature = "max-im-buffers-7")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 7;
+    } else if #[cfg(feature = "max-im-buffers-6")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 6;
+    } else if #[cfg(feature = "max-im-buffers-5")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 5;
+    } else if #[cfg(feature = "max-im-buffers-4")] {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 4;
+    } else {
+        /// Max number of IM buffers
+        const MAX_IM_BUFFERS: usize = 10;
+    }
+}
+
+cfg_if! {
+    if #[cfg(feature = "max-responders-32")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 32;
+    } else if #[cfg(feature = "max-responders-16")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 16;
+    } else if #[cfg(feature = "max-responders-8")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 8;
+    } else if #[cfg(feature = "max-responders-7")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 7;
+    } else if #[cfg(feature = "max-responders-6")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 6;
+    } else if #[cfg(feature = "max-responders-5")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 5;
+    } else if #[cfg(feature = "max-responders-4")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 4;
+    } else if #[cfg(feature = "max-responders-3")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 3;
+    } else if #[cfg(feature = "max-responders-2")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 2;
+    } else if #[cfg(feature = "max-responders-1")] {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 1;
+    } else {
+        /// Max number of concurrent responders
+        const MAX_RESPONDERS: usize = 4;
+    }
+}
+
+const MAX_BUSY_RESPONDERS: usize = 2;
+
+// The Key Right profile covers the advertised subscriptions per fabric,
+// two buffers per request responder, and the single sequential publisher.
+// Check the actual target configuration after dependency feature unification.
+#[cfg(all(feature = "max-subscriptions-15", feature = "max-im-buffers-20"))]
+const _: () = {
+    assert!(
+        MAX_SUBSCRIPTIONS >= rs_matter::fabric::MAX_FABRICS
+            * rs_matter::dm::clusters::basic_info::CapabilityMinima::new()
+                .subscriptions_per_fabric as usize
+    );
+    assert!(MAX_IM_BUFFERS >= MAX_SUBSCRIPTIONS + MAX_RESPONDERS * 2 + 1);
+};
+
+#[cfg(all(test, feature = "max-subscriptions-15", feature = "max-im-buffers-20"))]
+mod capacity_tests;
+
+pub type MatterStackInteractionModel<'a, C, H, K, RN, NC> = InteractionModel<
+    'a,
+    C,
+    MatterBuffers<MAX_IM_BUFFERS>,
+    H,
+    K,
+    RN,
+    NC,
+    MAX_SUBSCRIPTIONS,
+    EVENTS_RINGBUF_SIZE,
+>;
+
+/// The `InteractionModelState` specialization owned by `MatterStack`.
+///
+/// It owns the subscriptions table, the events queue and the `rs-matter`
+/// networks store as a single unit. The KV scratch buffer now lives in `Matter`.
+pub type MatterStackInteractionModelState<RN> =
+    InteractionModelState<RN, MAX_SUBSCRIPTIONS, EVENTS_RINGBUF_SIZE>;
+
+/// The `MatterStack` struct is the main entry point for the Matter stack.
+///
+/// It wraps the actual `rs-matter` Matter instance and provides a simplified API for running the stack.
+pub struct MatterStack<'a, const B: usize, N>
+where
+    N: Network,
+{
+    matter: Matter<'a>,
+    buffers: MatterBuffers<MAX_IM_BUFFERS>,
+    /// The interaction-model state: subscriptions table, events queue, the
+    /// `rs-matter` networks store, and the KV scratch buffer, owned as one unit.
+    state: MatterStackInteractionModelState<N::Networks>,
+    bump: Bump<B>,
+    run_lock: IfMutex<()>,
+    #[allow(unused)]
+    network: N,
+    //netif_conf: Signal<Option<NetifConf>>,
+}
+
+impl<'a, const B: usize, N> MatterStack<'a, B, N>
+where
+    N: Network,
+{
+    /// Create a new `MatterStack` instance.
+    #[allow(clippy::large_stack_frames)]
+    #[inline(always)]
+    pub const fn new(
+        dev_det: &'a BasicInfoConfig,
+        dev_comm: BasicCommData,
+        dev_att: &'a dyn DeviceAttestation,
+    ) -> Self {
+        Self {
+            matter: Matter::new(dev_det, dev_comm, dev_att, MATTER_PORT),
+            buffers: MatterBuffers::new(),
+            state: MatterStackInteractionModelState::new(N::NETWORKS),
+            bump: Bump::new(),
+            run_lock: IfMutex::new(()),
+            network: N::INIT,
+            //netif_conf: Signal::new(None),
+        }
+    }
+
+    #[allow(clippy::large_stack_frames)]
+    pub fn init(
+        dev_det: &'a BasicInfoConfig,
+        dev_comm: BasicCommData,
+        dev_att: &'a dyn DeviceAttestation,
+    ) -> impl Init<Self> {
+        init!(Self {
+            matter <- Matter::init(
+                dev_det,
+                dev_comm,
+                dev_att,
+                MATTER_PORT,
+            ),
+            buffers <- MatterBuffers::init(),
+            state <- MatterStackInteractionModelState::init(N::init_networks()),
+            bump <- Bump::init(),
+            run_lock <- IfMutex::init(()),
+            network <- N::init(),
+            //netif_conf: Signal::new(None),
+        })
+    }
+
+    /// A utility method to replace the initial Device Attestation Data Fetcher with another one.
+    ///
+    /// Reasoning and use-cases explained in the documentation of `replace_mdns`.
+    pub fn replace_dev_att(&mut self, dev_att: &'a dyn DeviceAttestation) {
+        self.matter.replace_dev_att(dev_att);
+    }
+
+    /// Get a reference to the `Matter` instance.
+    pub const fn matter(&self) -> &Matter<'a> {
+        &self.matter
+    }
+
+    /// Get a reference to the `Network` instance.
+    /// Useful when the user instantiates `MatterStack` with a custom network type.
+    pub const fn network(&self) -> &N {
+        &self.network
+    }
+
+    /// Create a new shared `KvBlobStore` instance, which is used to read and write blobs from the storage.
+    ///
+    /// The user needs to provide a `KvBlobStore` implementation, which is used to actually read and write the blobs from the storage.
+    ///
+    /// # Arguments
+    /// - `store` - the raw [`KvBlobStore`] implementation to wrap
+    pub fn kv<'s, S: KvBlobStore + 's>(&'s self, store: S) -> impl KvBlobStoreAccess + 's {
+        self.matter().kv(store)
+    }
+
+    // /// User code hook to get the state of the netif passed to the
+    // /// `run_with_netif` method.
+    // ///
+    // /// Useful when user code needs to bring up/down its own IP services depending on
+    // /// when the netif controlled by Matter goes up, down or changes its IP configuration.
+    // pub async fn get_netif_conf(&self) -> Option<NetifConf> {
+    //     self.netif_conf
+    //         .wait(|netif_conf| Some(netif_conf.clone()))
+    //         .await
+    // }
+
+    // fn update_netif_conf(&self, netif_conf: Option<&NetifConf>) -> bool {
+    //     self.netif_conf.modify(|global_ip_info| {
+    //         if global_ip_info.as_ref() != netif_conf {
+    //             *global_ip_info = netif_conf.cloned();
+    //             (true, true)
+    //         } else {
+    //             (false, false)
+    //         }
+    //     })
+    // }
+
+    // /// User code hook to detect changes to the IP state of the netif passed to the
+    // /// `run_with_netif` method.
+    // ///
+    // /// Useful when user code needs to bring up/down its own IP services depending on
+    // /// when the netif controlled by Matter goes up, down or changes its IP configuration.
+    // pub async fn wait_netif_changed(
+    //     &self,
+    //     prev_netif_info: Option<&NetifConf>,
+    // ) -> Option<NetifConf> {
+    //     self.netif_conf
+    //         .wait(|netif_info| (netif_info.as_ref() != prev_netif_info).then(|| netif_info.clone()))
+    //         .await
+    // }
+
+    /// Return information whether the Matter instance is already commissioned.
+    pub fn is_commissioned(&self) -> bool {
+        self.matter().is_commissioned()
+    }
+
+    /// Open the basic communication window, which allows commissioning tools to discover and commission the device.
+    ///
+    /// # Arguments
+    /// - `crypto` - a user-provided crypto implementation, necessary for the secure sessions establishment that happens in the basic communication window
+    /// - `notify` - a user-provided `AttrChangeNotifier`; typically, `Data Model::change_notify`; used to notify the Matter instance about changes in the state of the clusters' attributes, so that it can notify commissioning tools about them
+    pub fn open_basic_comm_window<C>(
+        &self,
+        crypto: C,
+        notify: &dyn AttrChangeNotifier,
+    ) -> Result<(), Error>
+    where
+        C: Crypto,
+    {
+        self.matter()
+            .open_basic_comm_window(MAX_COMM_WINDOW_TIMEOUT_SECS, crypto, notify)?;
+
+        self.matter()
+            .print_standard_qr_text(self.network.discovery_capabilities())?;
+
+        self.matter()
+            .print_standard_qr_code(QrTextType::Unicode, self.network.discovery_capabilities())
+    }
+
+    /// This method is a specialization of `run_transport_net` over the UDP transport (both IPv4 and IPv6).
+    /// It calls `run_transport_net`.
+    ///
+    /// #Arguments
+    /// - `crypto` - a user-provided crypto implementation, necessary for the secure sessions establishment that happens in the operational network
+    /// - `net_stack` - a user-provided network stack that implements `UdpBind`, `UdpConnect`, `TcpBind`, `TcpConnect`, and `Dns`
+    /// - `netif` - a user-provided `Netif` implementation
+    /// - `until` - the method will return once this future becomes ready
+    /// - `comm` - a tuple of additional and optional `NetworkReceive` and `NetworkSend` transport implementations
+    ///   (useful when a second transport needs to run in parallel with the operational Matter transport,
+    ///   i.e. when using concurrent commissisoning)
+    async fn run_oper_net<C, U, X, R, S>(
+        &self,
+        crypto: C,
+        net_stack: U,
+        net_interface: u32,
+        until: X,
+        mut comm: Option<(R, S)>,
+    ) -> Result<(), Error>
+    where
+        C: Crypto,
+        U: NetStack,
+        X: Future<Output = Result<(), Error>>,
+        R: NetworkReceive,
+        S: NetworkSend,
+    {
+        fn map_err<E: Debug>(e: E) -> Error {
+            warn!("Matter UDP network error: {:?}", debug2format!(e));
+            ErrorCode::StdIoError.into() // TODO
+        }
+
+        let udp_bind = unwrap!(net_stack.udp_bind());
+
+        let mut socket = udp_bind
+            .bind(SocketAddr::V6(SocketAddrV6::new(
+                Ipv6Addr::UNSPECIFIED,
+                MATTER_PORT,
+                0,
+                net_interface,
+            )))
+            .await
+            .map_err(map_err)?;
+
+        let (recv, send, m4, m6) = socket.split_multicast();
+
+        let multicast = udp::Udp(udp::Multicast::new(
+            m4,
+            // rs-matter does not really use IPv4 multicast for Groups, so we can just use `Ipv4Addr::UNSPECIFIED` here.
+            Ipv4Addr::UNSPECIFIED,
+            m6,
+            net_interface,
+        ));
+
+        let mut until_task = pin!(until);
+
+        if let Some((comm_recv, comm_send)) = comm.as_mut() {
+            info!("Running operational and commissioning networks");
+
+            let mut netw_task = pin!(self.run_transport_net(
+                &crypto,
+                ChainedNetwork::new(Address::is_udp, udp::Udp(send), comm_send),
+                ChainedNetwork::new(Address::is_udp, udp::Udp(recv), comm_recv),
+                ChainedNetwork::new(Address::is_udp, multicast, NoNetwork),
+            ));
+
+            select(&mut netw_task, &mut until_task).coalesce().await
+        } else {
+            info!("Running operational network");
+
+            let mut netw_task =
+                pin!(self.run_transport_net(&crypto, udp::Udp(send), udp::Udp(recv), multicast,));
+
+            select(&mut netw_task, &mut until_task).coalesce().await
+        }
+    }
+
+    /// This method runs the mDNS service.
+    ///
+    /// The netif instance is necessary, so that the loop can monitor the network and bring up/down
+    /// the mDNS service when the netif goes up/down or changes its IP addresses.
+    ///
+    /// This is necessary because mDNS needs to know the current IP addresses and
+    /// also needs to stop when the netif goes down.
+    ///
+    /// # Arguments
+    /// - `crypto` - a user-provided crypto implementation
+    /// - `net_stack` - a user-provided network stack that implements `UdpBind`, `UdpConnect`, `TcpBind`, `TcpConnect`, and `Dns`
+    /// - `netif` - a user-provided `Netif` implementation
+    /// - `mdns` - a user-provided mDNS implementation
+    async fn run_oper_netif_mdns<C, U, I, M>(
+        &self,
+        crypto: C,
+        net_stack: U,
+        netif: I,
+        mut mdns: M,
+    ) -> Result<(), Error>
+    where
+        C: Crypto,
+        U: NetStack,
+        I: NetifDiag + NetChangeNotif,
+        M: Mdns,
+    {
+        #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+        #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+        struct NetifState {
+            ipv6: Ipv6Addr,
+            ipv4: Ipv4Addr,
+            mac: [u8; 8],
+            operational: bool,
+            netif_index: u32,
+        }
+
+        impl NetifState {
+            pub const fn new() -> Self {
+                Self {
+                    ipv6: Ipv6Addr::UNSPECIFIED,
+                    ipv4: Ipv4Addr::UNSPECIFIED,
+                    mac: [0; 8],
+                    operational: false,
+                    netif_index: 0,
+                }
+            }
+        }
+
+        fn load_netif_state<I>(net_diag: I, state: &mut NetifState) -> Result<(), Error>
+        where
+            I: NetifDiag,
+        {
+            state.operational = false;
+            state.ipv6 = Ipv6Addr::UNSPECIFIED;
+            state.ipv4 = Ipv4Addr::UNSPECIFIED;
+            state.mac = [0; 8];
+
+            net_diag.netifs(&mut |ni| {
+                if ni.operational && !ni.ipv6_addrs.is_empty() {
+                    state.operational = true;
+                    state.ipv6 = ni.ipv6_addrs[0];
+                    state.ipv4 = ni
+                        .ipv4_addrs
+                        .first()
+                        .copied()
+                        .unwrap_or(Ipv4Addr::UNSPECIFIED);
+                    state.mac = *ni.hw_addr;
+                    state.netif_index = ni.netif_index;
+                }
+
+                Ok(())
+            })
+        }
+
+        async fn wait_changed<I>(
+            net_diag: I,
+            cur_state: &NetifState,
+            new_state: &mut NetifState,
+        ) -> Result<(), Error>
+        where
+            I: NetifDiag + NetChangeNotif,
+        {
+            loop {
+                load_netif_state(&net_diag, new_state)?;
+
+                if &*new_state != cur_state {
+                    info!(
+                        "Netif change detected.\n    Old: {:?}\n    New: {:?}",
+                        cur_state, new_state
+                    );
+                    break Ok(());
+                }
+
+                trace!("No change");
+                net_diag.wait_changed().await;
+            }
+        }
+
+        // let _guard = scopeguard::guard((), |_| {
+        //     self.update_netif_conf(None);
+        // });
+
+        let mut new_state = NetifState::new();
+        load_netif_state(&netif, &mut new_state)?;
+
+        loop {
+            let cur_state = new_state.clone();
+
+            let mut netif_changed_task = pin!(wait_changed(&netif, &cur_state, &mut new_state));
+
+            let mut mdns_task = pin!(async {
+                if cur_state.operational {
+                    info!("Netif up: {:?}", cur_state);
+
+                    let udp_bind = unwrap!(net_stack.udp_bind());
+
+                    info!("Running mDNS");
+
+                    loop {
+                        let _result = mdns
+                            .run(
+                                self.matter(),
+                                &crypto,
+                                &udp_bind,
+                                &cur_state.mac,
+                                cur_state.ipv4,
+                                cur_state.ipv6,
+                                cur_state.netif_index,
+                            )
+                            .await;
+
+                        warn!("mDNS failed with {:?}, retrying in 5s...", _result);
+                        embassy_time::Timer::after(Duration::from_secs(5)).await;
+                    }
+                } else {
+                    info!("Netif down");
+                    core::future::pending::<()>().await;
+                }
+
+                Ok(())
+            });
+
+            select(&mut netif_changed_task, &mut mdns_task)
+                .coalesce()
+                .await?;
+        }
+    }
+
+    #[inline(always)]
+    fn im<C, H, K, NC>(
+        &self,
+        crypto: C,
+        handler: H,
+        kv: K,
+        net_ctl: NC,
+    ) -> MatterStackInteractionModel<'_, C, H, K, N::Networks, NC>
+    where
+        C: Crypto,
+        H: DataModel,
+        K: KvBlobStoreAccess,
+        NC: NetCtl + WirelessDiag + NetChangeNotif,
+    {
+        MatterStackInteractionModel::new_with_net_ctl(
+            self.matter(),
+            crypto,
+            &self.buffers,
+            handler,
+            kv,
+            net_ctl,
+            &self.state,
+        )
+    }
+
+    async fn run_im<C, H, K, RN, NC>(
+        &self,
+        im: &MatterStackInteractionModel<'_, C, H, K, RN, NC>,
+    ) -> Result<(), Error>
+    where
+        C: Crypto,
+        H: DataModel,
+        K: KvBlobStoreAccess,
+        RN: Networks,
+        NC: NetCtl + WirelessDiag + NetChangeNotif,
+    {
+        // TODO
+        // Reset the Matter transport buffers and all sessions first
+        // self.matter().reset_transport()?;
+
+        self.emit_startup_event(im);
+
+        let mut responder = pin!(self.run_responder(im));
+        let mut im_job = pin!(im.run());
+
+        select(&mut responder, &mut im_job).coalesce().await
+    }
+
+    async fn run_im_with_bump<C, H, K, RN, NC>(
+        &self,
+        im: &MatterStackInteractionModel<'_, C, H, K, RN, NC>,
+    ) -> Result<(), Error>
+    where
+        C: Crypto,
+        H: DataModel,
+        K: KvBlobStoreAccess,
+        RN: Networks,
+        NC: NetCtl + WirelessDiag + NetChangeNotif,
+    {
+        // TODO
+        // Reset the Matter transport buffers and all sessions first
+        // self.matter().reset_transport()?;
+
+        self.emit_startup_event(im);
+
+        let mut responder = pin_alloc!(self.bump, self.run_responder_with_bump(im));
+        let mut im_job = pin!(im.run());
+
+        select(&mut responder, &mut im_job).coalesce().await
+    }
+
+    /// Emit `BasicInformation::StartUp` on the root endpoint, as required
+    /// by Matter 1.5.1 Core §11.1.6.1 (SHALL).
+    fn emit_startup_event<C, H, K, RN, NC>(
+        &self,
+        im: &MatterStackInteractionModel<'_, C, H, K, RN, NC>,
+    ) where
+        C: Crypto,
+        H: DataModel,
+        K: KvBlobStoreAccess,
+        RN: Networks,
+        NC: NetCtl + WirelessDiag + NetChangeNotif,
+    {
+        let sw_ver = self.matter().dev_det().sw_ver;
+        match StartUp::emit_for(im, 0, |b| b.software_version(sw_ver)?.end()) {
+            Ok(event_number) => info!(
+                "BasicInformation::StartUp emitted (sw_ver={}, event_number={})",
+                sw_ver, event_number,
+            ),
+            Err(e) => warn!("Failed to emit BasicInformation::StartUp: {:?}", e),
+        }
+    }
+
+    async fn run_responder<C, H, K, RN, NC>(
+        &self,
+        im: &MatterStackInteractionModel<'_, C, H, K, RN, NC>,
+    ) -> Result<(), Error>
+    where
+        C: Crypto,
+        H: DataModel,
+        K: KvBlobStoreAccess,
+        RN: Networks,
+        NC: NetCtl + WirelessDiag + NetChangeNotif,
+    {
+        let responder = DefaultResponder::new(im);
+
+        // Run the responder with up to MAX_RESPONDERS handlers (i.e. MAX_RESPONDERS exchanges can be handled simultenously)
+        // Clients trying to open more exchanges than the ones currently running will get "I'm busy, please try again later"
+        pin!(responder.run::<MAX_RESPONDERS, MAX_BUSY_RESPONDERS>()).await?;
+
+        Ok(())
+    }
+
+    async fn run_responder_with_bump<C, H, K, RN, NC>(
+        &self,
+        im: &MatterStackInteractionModel<'_, C, H, K, RN, NC>,
+    ) -> Result<(), Error>
+    where
+        C: Crypto,
+        H: DataModel,
+        K: KvBlobStoreAccess,
+        RN: Networks,
+        NC: NetCtl + WirelessDiag + NetChangeNotif,
+    {
+        let responder = DefaultResponder::new(im);
+
+        let mut actual = pin_alloc!(
+            self.bump,
+            self.run_one_responder_with_bump::<MAX_RESPONDERS, _>(responder.responder())
+        );
+        let mut busy = pin_alloc!(
+            self.bump,
+            self.run_one_responder_with_bump::<MAX_BUSY_RESPONDERS, _>(responder.busy_responder())
+        );
+
+        select(&mut actual, &mut busy).coalesce().await
+    }
+
+    /// Run a responder with Q handlers using the provided bump allocator.
+    async fn run_one_responder_with_bump<const Q: usize, T>(
+        &self,
+        responder: &Responder<'_, T>,
+    ) -> Result<(), Error>
+    where
+        T: ExchangeHandler,
+    {
+        info!("{}: Creating {} handlers", responder.name(), Q);
+
+        let mut handlers = heapless::Vec::<_, Q>::new();
+        debug!(
+            "{}: Handlers size: {}B",
+            responder.name(),
+            core::mem::size_of_val(&handlers)
+        );
+
+        for handler_id in 0..Q {
+            unwrap!(handlers
+                .push(pin_alloc!(self.bump, responder.handle(handler_id)))
+                .map_err(|_| ())); // Cannot fail because the vector has size N
+        }
+
+        let handlers = pin!(handlers);
+        let handlers = unsafe { handlers.map_unchecked_mut(|handlers| handlers.as_mut_slice()) };
+
+        select_slice(handlers).await.0
+    }
+
+    fn run_transport_net<'t, C, S, R, M>(
+        &'t self,
+        crypto: C,
+        send: S,
+        recv: R,
+        multicast: M,
+    ) -> impl Future<Output = Result<(), Error>> + 't
+    where
+        C: Crypto + 't,
+        S: NetworkSend + 't,
+        R: NetworkReceive + 't,
+        M: NetworkMulticast + 't,
+    {
+        self.matter().run(crypto, send, recv, multicast)
+    }
+}
+
+/// A trait representing a user task that needs access to the operational network interface
+/// (Netif and net stack) to perform its work.
+///
+/// Note that the task would be started only when `rs-matter`
+/// brings up the operational interface (eth, wifi or thread)
+/// and if the interface goes down, the user task would be stopped.
+/// Upon re-connection, the task would be started again.
+pub trait UserTask {
+    /// Run the task with the given network stack and network interface
+    async fn run<S, N>(&mut self, net_stack: S, netif: N) -> Result<(), Error>
+    where
+        S: NetStack,
+        N: NetifDiag + NetChangeNotif;
+}
+
+impl<T> UserTask for &mut T
+where
+    T: UserTask,
+{
+    fn run<S, N>(&mut self, net_stack: S, netif: N) -> impl Future<Output = Result<(), Error>>
+    where
+        S: NetStack,
+        N: NetifDiag + NetChangeNotif,
+    {
+        (*self).run(net_stack, netif)
+    }
+}
+
+impl UserTask for () {
+    fn run<S, N>(&mut self, _net_stack: S, _netif: N) -> impl Future<Output = Result<(), Error>>
+    where
+        S: NetStack,
+        N: NetifDiag + NetChangeNotif,
+    {
+        core::future::pending::<Result<(), Error>>()
+    }
+}
+
+// The data model is not created yet, so we don't have to notify anything
+pub(crate) struct DummyAttrNotifier;
+
+impl DynBase for DummyAttrNotifier {}
+
+impl AttrChangeNotifier for DummyAttrNotifier {
+    fn notify_attr_changed(&self, _endpoint_id: EndptId, _cluster_id: ClusterId, _attr_id: AttrId) {
+    }
+
+    fn notify_cluster_changed(&self, _endpoint_id: EndptId, _cluster_id: ClusterId) {}
+
+    fn notify_endpoint_changed(&self, _endpoint_id: EndptId) {}
+
+    fn notify_all_changed(&self) {}
+}
