@@ -14,6 +14,8 @@ paths and absence of shorts are confirmed, and it is connected and powered.
 The second board's rework completion is not yet reported. After Michael adjusted
 the cable, the first board returned on `/dev/cu.usbmodem101` and passed powered
 PCA register checks. Subsequent OE and connector probing is recorded below.
+Michael later replaced the cable with a stable one and confirmed that its
+VBUS/5 V is also blocked.
 The earlier results below precede rework unless explicitly marked otherwise.
 
 ## Reported baseline, 2026-09-28
@@ -196,6 +198,24 @@ identity, `CoreUsbUart` reset, acknowledged Off at level 57 / 303 mired, no outp
 or storage failures, and no recovery events. Explicit `off` and `verify` both
 passed. The pairing window reopened, with a fresh capture at
 `local/pairing-discovery-retry.log`; no joining attempt had occurred at that point.
+
+Michael's next Home attempt failed. Replacing the cable disconnected the capture
+process; reopening the same USB port recovered queued logs in
+`local/pairing-after-cable-change.log`. Certificate setup completed and the
+longer scan returned 35 APs, but the trailing scan-response completion log was
+absent. The commissioning failsafe expired. At 667,014 ms uptime the device
+had zero Wi-Fi connection attempts, no resets since flashing, and no light or
+storage faults. This attempt stopped before association, unlike the earlier
+`NoAccessPointFound` failure.
+
+Source review found that the pinned Matter ScanNetworks handler writes every
+reported AP into one bounded response without chunking. A callback encoding
+failure aborts the handler before the trailing completion log. Production scan
+results are now capped at ten in SDK RSSI order, with explicit callback-error
+logging. The target SSID appeared within the first six results in the captured
+diagnostic scans. The specific device-side error was not retained during the
+cable change; the encoder regression test establishes the overflow mechanism
+separately. Fresh Home commissioning remains the acceptance check.
 
 ## LED-connected acceptance pending
 

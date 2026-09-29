@@ -16,6 +16,7 @@ mod device_matter;
 mod hardware;
 mod network;
 mod network_driver;
+mod network_scan;
 mod output;
 mod presets;
 mod recovery;

@@ -211,7 +211,12 @@ BLE provides Wi-Fi credentials. No passcode or Wi-Fi credentials belong in the
 repository. The image uses development Matter identifiers and is a personal,
 uncertified accessory.
 
-Wi-Fi discovery uses 100–300 ms active dwell per channel. Before association,
+Wi-Fi discovery uses 100–300 ms active dwell per channel and returns at most
+ten APs in the SDK's descending RSSI order. The pinned Matter encoder builds
+one ScanNetworks response without chunking, so an unrestricted result list
+can overflow its packet budget. Host tests encode worst-case result entries
+with the pinned SDK to keep this bound within the response buffer. SSID
+filtering happens before the result cap. Before association,
 the driver scans for the requested SSID and uses its strongest result as a
 starting-channel hint, with all-channel association and no pinned BSSID. Empty
 or failed discovery falls back to all-channel association. Discovery and joining

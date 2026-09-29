@@ -4,6 +4,8 @@ pub use rs_matter as matter;
 
 #[path = "../../src/light.rs"]
 pub mod light;
+#[path = "../../src/network_scan.rs"]
+pub mod network_scan;
 #[path = "../../src/presets.rs"]
 pub mod presets;
 #[path = "../../src/recovery.rs"]
@@ -13,5 +15,7 @@ pub mod runtime;
 
 #[cfg(test)]
 mod control_tests;
+#[cfg(test)]
+mod network_scan_tests;
 #[cfg(test)]
 mod runtime_tests;

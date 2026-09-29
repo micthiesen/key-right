@@ -72,10 +72,14 @@ pub struct Controller<'a>(IfMutex<WifiController<'a>>, Mutex<Cell<bool>>);
 // The SDK's 10–20 ms active dwell missed the installed AP during C3 bench
 // commissioning. Keep discovery long enough to receive delayed probe replies.
 fn discovery_scan() -> ScanConfig {
-    ScanConfig::default().with_scan_type(ScanTypeConfig::Active {
-        min: esp_hal::time::Duration::from_millis(100),
-        max: esp_hal::time::Duration::from_millis(300),
-    })
+    ScanConfig::default()
+        // ScanNetworks encodes one response, without chunking. The SDK returns
+        // APs in RSSI order, so retain the strongest results within its budget.
+        .with_max(crate::network_scan::MAX_SCAN_RESULTS)
+        .with_scan_type(ScanTypeConfig::Active {
+            min: esp_hal::time::Duration::from_millis(100),
+            max: esp_hal::time::Duration::from_millis(300),
+        })
 }
 
 impl<'a> Controller<'a> {
@@ -106,7 +110,7 @@ impl Controller<'_> {
 
         log::info!("Wifi scan complete, reporting {} results", aps.len());
 
-        for ap in aps {
+        for (index, ap) in aps.into_iter().enumerate() {
             f(&NetworkScanInfo::Wifi {
                 ssid: ap.ssid.as_str().as_bytes(),
                 bssid: &ap.bssid,
@@ -134,6 +138,13 @@ impl Controller<'_> {
                     }
                     _ => WiFiSecurityBitmap::WPA_2_PERSONAL, // Best guess
                 },
+            })
+            .map_err(|error| {
+                log::error!(
+                    "Wifi scan response failed at result {}: {error:?}",
+                    index + 1
+                );
+                error
             })?;
         }
 

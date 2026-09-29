@@ -89,6 +89,25 @@ Longer explicit scanning does not change the SDK's internal association scan
 timing. A fresh Apple Home attempt is still required to establish joining and
 commissioning; see [the physical record](validation-record.md).
 
+## 2026-09-28 bounded Matter scan response
+
+The follow-up scan-response regression uses the pinned Matter TLV encoder and
+the complete InvokeResponse envelope, including CommandRef, ten 32-byte SSIDs,
+and six-byte BSSIDs. It fits in 620 bytes of the actual 1,178-byte exchange
+payload. The same encoder returns `NoSpace` for 35 maximum-length results.
+Production discovery now caps results at ten before invoking that encoder and
+logs callback failures. SSID filtering remains ahead of the cap.
+
+Both software gates passed: 26 core/CLI Rust tests, 38 application host tests,
+and 29 Python tests. Normal real, simulated, and radio-diagnostic C3 builds
+passed Clippy and linked-stack checks. Independent review found no further
+defect in the production cap or error propagation.
+
+This reproduces an overflow mechanism consistent with the latest Home failure,
+which ended after discovering 35 APs and before any Wi-Fi connection attempt.
+The device's precise encoding error was lost when the cable was replaced.
+Successful association and commissioning still require a fresh physical retry.
+
 ## Stock-firmware evidence
 
 On 2026-09-23, offline emulation of the signed original firmware reproduced
