@@ -11,9 +11,9 @@ jobs:
       - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - run: sh scripts/check.sh
 
-  esp32c6:
+  esp32c3:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy --target riscv32imac-unknown-none-elf
+      - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy --target riscv32imc-unknown-none-elf
       - run: sh scripts/check-firmware.sh

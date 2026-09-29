@@ -1,12 +1,14 @@
-//! XIAO ESP32C6 controlling the retained stock PCA9635 over I2C.
+//! ESP32-C3_MINI_V1 controlling the retained stock PCA9635 over I2C.
 #![no_std]
 #![no_main]
 use esp_backtrace as _;
-use esp_hal::gpio::{Level, Output, OutputConfig};
+use esp_hal::gpio::{DriveMode, Level, Output, OutputConfig};
 use esp_hal::i2c::master::{BusTimeout, Config as I2cConfig, I2c, SoftwareTimeout};
+use esp_hal::ram;
 use esp_hal::time::{Duration, Rate};
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
+use esp_metadata_generated::memory_range;
 use tinyrlibc as _;
 
 mod console;
@@ -22,12 +24,23 @@ mod storage;
 
 esp_bootloader_esp_idf::esp_app_desc!();
 
+// Same split as the pinned SDK's persistent Wi-Fi example: reclaim RAM that
+// the second-stage bootloader no longer needs without reducing the radio heap.
+const HEAP_SIZE: usize = 100 * 1024;
+const RECLAIMED_RAM: usize =
+    memory_range!("DRAM2_UNINIT").end - memory_range!("DRAM2_UNINIT").start;
+
 #[esp_rtos::main]
 async fn main(spawner: embassy_executor::Spawner) {
     output::init();
     let p = esp_hal::init(esp_hal::Config::default());
-    // Optional connection to stock active-low OE. HIGH is not a POR safety guarantee.
-    let oe = Output::new(p.GPIO21, Level::High, OutputConfig::default());
+    // Output::new sets the latch HIGH before configuring/enabling the output.
+    // The existing ~10 kΩ pull-up releases OE; HIGH is not a POR-off guarantee.
+    let oe = Output::new(
+        p.GPIO6,
+        Level::High,
+        OutputConfig::default().with_drive_mode(DriveMode::OpenDrain),
+    );
     let bus = I2c::new(
         p.I2C0,
         I2cConfig::default()
@@ -36,12 +49,10 @@ async fn main(spawner: embassy_executor::Spawner) {
             .with_software_timeout(SoftwareTimeout::Transaction(Duration::from_millis(25))),
     )
     .expect("100 kHz I2C configuration")
-    .with_sda(p.GPIO18)
-    .with_scl(p.GPIO20);
-    // Seeed XIAO ESP32C6 onboard antenna: switch enable low, select low.
-    let _antenna_enable = Output::new(p.GPIO3, Level::Low, OutputConfig::default());
-    let _antenna_select = Output::new(p.GPIO14, Level::Low, OutputConfig::default());
-    esp_alloc::heap_allocator!(size: 100 * 1024);
+    .with_sda(p.GPIO4)
+    .with_scl(p.GPIO5);
+    esp_alloc::heap_allocator!(size: HEAP_SIZE - RECLAIMED_RAM);
+    esp_alloc::heap_allocator!(#[ram(reclaimed)] size: RECLAIMED_RAM);
     let timg0 = TimerGroup::new(p.TIMG0);
     let software_interrupt =
         esp_hal::interrupt::software::SoftwareInterruptControl::new(p.SW_INTERRUPT);
@@ -59,8 +70,8 @@ async fn main(spawner: embassy_executor::Spawner) {
         esp_hal::system::reset_reason()
     );
     let mut hardware = hardware::PhysicalOutput::new(bus, oe);
-    // Try stock zero-PWM before Matter initialization. Absence of the PCA must
-    // not block USB commissioning-code retrieval before the board is wired.
+    // Try stock zero-PWM before Matter initialization. A PCA fault must not
+    // prevent USB diagnostics on the bench.
     use runtime::Hardware as _;
     let _ = hardware.shutdown();
     device_matter::run(

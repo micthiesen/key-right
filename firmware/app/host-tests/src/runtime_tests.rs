@@ -1,5 +1,5 @@
 use crate::runtime::{Fault, Hardware, OutputError, Runtime, INTENT_KEY};
-use key_right_core::{LightOutput, LightState, Preset};
+use key_right_core::{ColorTemperature, Level, LightOutput, LightState};
 use rs_matter::error::{Error, ErrorCode};
 use rs_matter::persist::{KvBlobStore, KvBlobStoreAccess, KV_BUF_SIZE};
 use std::cell::{Cell, RefCell};
@@ -89,109 +89,156 @@ fn rig() -> (Rc<Rig>, Runtime<Access, Output>) {
     let r = Runtime::load(Access(h.clone()), Output(h.clone()));
     (h, r)
 }
+
 #[test]
-fn fresh_boot_uses_stock_output_without_profile_provisioning() {
+fn first_boot_is_off_with_about_three_percent_and_3300k() {
     let (h, r) = rig();
     r.tick(0);
-    assert!(!r.endpoint_on(Preset::One).unwrap());
-    r.set_endpoint(Preset::Two, true).unwrap();
-    assert!(r.endpoint_on(Preset::Two).unwrap());
-    assert_eq!(h.records.borrow().len(), 1); // Only light intent; no profile blob.
+    assert_eq!(r.acknowledged().unwrap(), LightState::default());
+    assert!(h.records.borrow().is_empty());
+    let frame = key_right_core::pca9635::stock_frame(LightState {
+        on: true,
+        ..LightState::default()
+    });
+    assert_eq!([frame[0], frame[4]], [6, 2]);
 }
+
 #[test]
-fn absent_pca_is_an_output_fault_not_a_provisioning_gate() {
+fn state_is_saved_before_io_and_repeated_commands_do_not_write_flash() {
+    let (h, r) = rig();
+    r.tick(0);
+    h.events.borrow_mut().clear();
+    r.set_power(true).unwrap();
+    assert_eq!(h.events.borrow()[0], format!("store:{INTENT_KEY}"));
+    assert!(h.events.borrow()[1].starts_with("apply:"));
+    h.events.borrow_mut().clear();
+    r.set_power(true).unwrap();
+    assert!(h.events.borrow().is_empty());
+    r.set_level(Level::MAX, false).unwrap();
+    r.set_temperature(ColorTemperature::MIN).unwrap();
+    let intended = r.snapshot().intended;
+    let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
+    reboot.tick(0);
+    assert_eq!(reboot.acknowledged().unwrap(), intended);
+}
+
+#[test]
+fn absent_pca_preserves_commands_for_bounded_recovery() {
     let (h, _) = rig();
     h.fail_output.set(true);
     let r = Runtime::load(Access(h.clone()), Output(h.clone()));
     assert_eq!(r.snapshot().fault, Fault::Output);
-    assert_eq!(r.snapshot().applied, None);
-    assert!(r.set_endpoint(Preset::Two, true).is_err());
+    assert!(r.set_power(true).is_err());
     assert!(r.snapshot().intended.on);
     h.fail_output.set(false);
+    r.tick(4999);
+    assert!(r.acknowledged().is_err());
     r.tick(5000);
-    assert!(r.endpoint_on(Preset::Two).unwrap());
+    assert!(r.acknowledged().unwrap().on);
 }
-#[test]
-fn preset_selection_is_durable_before_io_and_inactive_off_is_noop() {
-    let (h, r) = rig();
-    r.tick(0);
-    h.events.borrow_mut().clear();
-    r.set_endpoint(Preset::Two, true).unwrap();
-    assert_eq!(h.events.borrow()[0], format!("store:{INTENT_KEY}"));
-    assert!(h.events.borrow()[1].starts_with("apply:"));
-    h.events.borrow_mut().clear();
-    r.set_endpoint(Preset::One, false).unwrap();
-    assert!(h.events.borrow().is_empty());
-    let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
-    reboot.tick(0);
-    assert!(reboot.endpoint_on(Preset::Two).unwrap());
-}
+
 #[test]
 fn failed_save_never_applies_pending_on_and_retries_it() {
     let (h, r) = rig();
     r.tick(0);
     h.fail_store.set(true);
-    assert!(r.set_endpoint(Preset::One, true).is_err());
+    assert!(r.set_power(true).is_err());
     assert_eq!(r.snapshot().fault, Fault::Storage);
-    assert_eq!(r.snapshot().applied, None);
+    assert!(r.acknowledged().is_err());
     assert!(!h.actual.get().unwrap().on);
     h.fail_store.set(false);
     r.tick(4999);
-    assert_eq!(r.snapshot().applied, None);
+    assert!(r.acknowledged().is_err());
     r.tick(5000);
-    assert!(r.endpoint_on(Preset::One).unwrap());
+    assert!(r.acknowledged().unwrap().on);
 }
+
 #[test]
-fn failed_off_can_leave_light_on_but_never_claims_acknowledged_off() {
+fn failed_off_can_leave_physical_on_without_acknowledging_off() {
     let (h, r) = rig();
     r.tick(0);
-    r.set_endpoint(Preset::Two, true).unwrap();
+    r.set_power(true).unwrap();
     h.fail_output.set(true);
     assert!(r.off().is_err());
     assert!(!r.snapshot().intended.on);
-    assert_eq!(r.snapshot().applied, None);
+    assert!(r.acknowledged().is_err());
     assert!(h.actual.get().unwrap().on);
-    assert_eq!(r.snapshot().fault, Fault::Output);
     h.fail_output.set(false);
     r.tick(5000);
-    assert!(!r.endpoint_on(Preset::Two).unwrap());
-    assert!(!h.actual.get().unwrap().on);
+    assert!(!r.acknowledged().unwrap().on);
 }
+
 #[test]
-fn periodic_readback_failure_marks_unknown_then_restores_intent() {
+fn periodic_readback_failure_marks_unknown_then_restores_all_settings() {
     let (h, r) = rig();
     r.tick(0);
-    r.set_endpoint(Preset::Two, true).unwrap();
+    r.set_power(true).unwrap();
+    r.set_level(Level::MAX, false).unwrap();
+    r.set_temperature(ColorTemperature::MIN).unwrap();
+    let intended = r.snapshot().intended;
     h.actual.set(None);
     r.tick(5000);
-    assert!(r.endpoint_on(Preset::Two).is_err());
+    assert!(r.acknowledged().is_err());
     r.tick(9999);
-    assert_eq!(r.snapshot().applied, None);
+    assert!(r.acknowledged().is_err());
     r.tick(10000);
-    assert!(r.endpoint_on(Preset::Two).unwrap());
+    assert_eq!(r.acknowledged().unwrap(), intended);
     assert_eq!(r.snapshot().recoveries, 1);
 }
+
 #[test]
-fn invalid_record_is_preserved_until_explicit_local_off_repairs_it() {
+fn invalid_records_are_preserved_until_local_off_repairs_only_intent() {
+    let malformed = [
+        vec![],
+        vec![3, 1, 0, 47, 1, 0, 255, 0, 0],
+        vec![3, 2, 57, 47, 1, 0, 255, 0, 0],
+        vec![3, 1, 57, 0, 0, 0, 255, 0, 0],
+        vec![3, 1, 57, 47, 1, 4, 255, 0, 0],
+        vec![3, 1, 57, 47, 1, 0, 255, 1, 0],
+    ];
+    for bytes in malformed {
+        let (h, _) = rig();
+        h.records.borrow_mut().insert(INTENT_KEY, bytes.clone());
+        h.records.borrow_mut().insert(123, vec![1, 2, 3]);
+        let r = Runtime::load(Access(h.clone()), Output(h.clone()));
+        r.tick(0);
+        assert_eq!(r.snapshot().fault, Fault::InvalidRecord);
+        assert_eq!(h.records.borrow()[&INTENT_KEY], bytes);
+        assert!(r.set_power(true).is_err());
+        r.off().unwrap();
+        assert_eq!(h.records.borrow()[&INTENT_KEY][0], 3);
+        assert_eq!(h.records.borrow()[&123], vec![1, 2, 3]);
+        r.set_power(true).unwrap();
+    }
+}
+
+#[test]
+fn legacy_presets_migrate_once_and_restore_the_selected_temperature() {
     let (h, _) = rig();
     h.records
         .borrow_mut()
-        .insert(INTENT_KEY, vec![2, 9, 0, 0, 0]);
+        .insert(INTENT_KEY, vec![2, 0, 0, 2, 2]);
     let r = Runtime::load(Access(h.clone()), Output(h.clone()));
     r.tick(0);
-    assert_eq!(r.snapshot().fault, Fault::InvalidRecord);
-    assert_eq!(h.records.borrow()[&INTENT_KEY], vec![2, 9, 0, 0, 0]);
-    assert!(r.set_endpoint(Preset::One, true).is_err());
-    r.off().unwrap();
-    assert_eq!(h.records.borrow()[&INTENT_KEY], vec![2, 0, 0, 0, 0]);
-    r.set_endpoint(Preset::One, true).unwrap();
+    let state = r.acknowledged().unwrap();
+    assert!(state.on);
+    assert_eq!(state.level, Level::DEFAULT);
+    assert_eq!(state.temperature.get(), 200);
+    assert_eq!(h.records.borrow()[&INTENT_KEY][0], 3);
+    assert_eq!(r.startup(), None);
+    r.set_power(false).unwrap();
+    let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
+    reboot.tick(0);
+    assert!(!reboot.acknowledged().unwrap().on);
+    assert_eq!(reboot.acknowledged().unwrap().temperature.get(), 200);
 }
+
 #[test]
 fn transient_read_failure_retries_and_applies_startup_only_once() {
     let (h, _) = rig();
     h.records
         .borrow_mut()
-        .insert(INTENT_KEY, vec![2, 1, 1, 0, 3]);
+        .insert(INTENT_KEY, vec![3, 1, 57, 47, 1, 3, 255, 0, 0]);
     h.fail_load.set(true);
     let r = Runtime::load(Access(h.clone()), Output(h.clone()));
     assert_eq!(r.snapshot().fault, Fault::Storage);
@@ -200,14 +247,14 @@ fn transient_read_failure_retries_and_applies_startup_only_once() {
     assert_eq!(h.load_calls.get(), calls);
     r.tick(5000);
     assert_eq!(r.snapshot().storage_failures, 2);
-    assert_eq!(h.records.borrow()[&INTENT_KEY], vec![2, 1, 1, 0, 3]);
     h.fail_load.set(false);
     r.tick(10000);
-    assert!(!r.endpoint_on(Preset::Two).unwrap());
+    assert!(!r.acknowledged().unwrap().on);
     r.tick(15000);
-    assert!(!r.endpoint_on(Preset::Two).unwrap());
-    assert_eq!(h.records.borrow()[&INTENT_KEY], vec![2, 0, 1, 0, 3]);
+    assert!(!r.acknowledged().unwrap().on);
+    assert_eq!(h.records.borrow()[&INTENT_KEY][1], 0);
 }
+
 #[test]
 fn local_off_during_failed_read_overrides_saved_on_after_recovery() {
     let (h, _) = rig();
@@ -220,101 +267,175 @@ fn local_off_during_failed_read_overrides_saved_on_after_recovery() {
     assert_eq!(h.records.borrow()[&INTENT_KEY], vec![2, 1, 1, 0, 0]);
     h.fail_load.set(false);
     r.tick(5000);
-    assert!(!r.endpoint_on(Preset::Two).unwrap());
-    assert_eq!(h.records.borrow()[&INTENT_KEY], vec![2, 0, 1, 0, 0]);
+    assert!(!r.acknowledged().unwrap().on);
+    assert_eq!(r.acknowledged().unwrap().temperature.get(), 200);
 }
+
 #[test]
 fn repeated_local_off_checks_io_without_rewriting_flash() {
     let (h, r) = rig();
     r.tick(0);
-    r.set_endpoint(Preset::One, true).unwrap();
+    r.set_power(true).unwrap();
     r.off().unwrap();
     h.events.borrow_mut().clear();
     r.off().unwrap();
     assert_eq!(h.events.borrow().first().unwrap(), "off");
     assert!(!h.events.borrow().iter().any(|e| e.starts_with("store:")));
 }
+
 #[test]
-fn startup_policies_are_durable_and_endpoint_two_wins_conflicting_on() {
-    use rs_matter::dm::clusters::app::on_off::StartUpOnOffEnum as Startup;
-    let (h, r) = rig();
-    r.tick(0);
-    r.set_startup(Preset::One, Some(Startup::On)).unwrap();
-    r.set_startup(Preset::Two, Some(Startup::On)).unwrap();
-    assert!(!r.snapshot().intended.on);
-    let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
-    reboot.tick(0);
-    assert!(!reboot.endpoint_on(Preset::One).unwrap());
-    assert!(reboot.endpoint_on(Preset::Two).unwrap());
-    assert_eq!(h.records.borrow()[&INTENT_KEY], vec![2, 1, 1, 2, 2]);
-}
-#[test]
-fn startup_save_failures_do_not_claim_setting_or_apply_unsaved_boot_change() {
+fn startup_settings_are_atomic_durable_and_do_not_change_live_output() {
     use rs_matter::dm::clusters::app::on_off::StartUpOnOffEnum as Startup;
     let (h, r) = rig();
     r.tick(0);
     h.fail_store.set(true);
-    assert!(r.set_startup(Preset::Two, Some(Startup::On)).is_err());
-    assert_eq!(r.startup(Preset::Two), None);
+    assert!(r.set_startup(Some(Startup::On)).is_err());
+    assert!(r.set_startup_level(Some(254)).is_err());
+    assert!(r
+        .set_startup_temperature(Some(ColorTemperature::MIN))
+        .is_err());
+    assert_eq!(r.startup(), None);
+    assert_eq!(r.startup_level(), None);
+    assert_eq!(r.startup_temperature(), None);
     h.fail_store.set(false);
-    r.set_startup(Preset::Two, Some(Startup::On)).unwrap();
+    r.set_startup(Some(Startup::On)).unwrap();
+    r.set_startup_level(Some(254)).unwrap();
+    r.set_startup_temperature(Some(ColorTemperature::MIN))
+        .unwrap();
+    assert_eq!(r.acknowledged().unwrap(), LightState::default());
     h.fail_store.set(true);
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
-    assert_eq!(reboot.snapshot().applied, None);
+    assert!(reboot.acknowledged().is_err());
     h.fail_store.set(false);
     reboot.tick(5000);
-    assert!(reboot.endpoint_on(Preset::Two).unwrap());
+    assert_eq!(
+        reboot.acknowledged().unwrap(),
+        LightState {
+            on: true,
+            level: Level::MAX,
+            temperature: ColorTemperature::MIN
+        }
+    );
 }
+
 #[test]
-fn timed_off_updates_intent_despite_bus_failure() {
+fn independent_fades_persist_destinations_not_intermediate_frames() {
     let (h, r) = rig();
     r.tick(0);
-    let handler =
-        crate::presets::PresetHandler::new(&r, Preset::One, 1, rs_matter::dm::Dataver::new(0));
-    h.fail_output.set(true);
-    assert!(handler.timed_on(false, 10, 0).is_err());
-    assert!(r.snapshot().intended.on);
-    handler.tick(10);
-    assert!(!r.snapshot().intended.on);
-    h.fail_output.set(false);
-    r.tick(5000);
-    assert!(!r.endpoint_on(Preset::One).unwrap());
+    r.set_power(true).unwrap();
+    r.set_level_transition(254, false, 2000).unwrap();
+    r.set_temperature_transition(ColorTemperature::MIN, 1000)
+        .unwrap();
+    h.events.borrow_mut().clear();
+    r.tick(500);
+    let half = r.acknowledged().unwrap();
+    assert!(half.level.get() > 57 && half.level.get() < 254);
+    assert_eq!(half.temperature.get(), 223);
+    assert_eq!(r.level_remaining_ms(), 1500);
+    assert_eq!(r.temperature_remaining_ms(), 500);
+    assert!(!h.events.borrow().iter().any(|e| e.starts_with("store:")));
+    let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
+    reboot.tick(0);
+    assert_eq!(
+        reboot.acknowledged().unwrap(),
+        LightState {
+            on: true,
+            level: Level::MAX,
+            temperature: ColorTemperature::MIN
+        }
+    );
 }
+
 #[test]
-fn selecting_other_preset_clears_old_timed_duration() {
+fn stopped_fade_is_durable_and_does_not_stop_other_axis() {
+    let (h, r) = rig();
+    r.tick(0);
+    r.set_power(true).unwrap();
+    r.set_level_transition(254, false, 2000).unwrap();
+    r.set_temperature_transition(ColorTemperature::MIN, 2000)
+        .unwrap();
+    r.tick(500);
+    let level = r.acknowledged().unwrap().level;
+    r.stop_level_transition().unwrap();
+    r.tick(2000);
+    assert_eq!(r.acknowledged().unwrap().level, level);
+    assert_eq!(r.acknowledged().unwrap().temperature, ColorTemperature::MIN);
+    let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
+    reboot.tick(0);
+    assert_eq!(reboot.acknowledged().unwrap(), r.acknowledged().unwrap());
+}
+
+#[test]
+fn fade_to_off_and_immediate_off_never_relight_from_a_pending_track() {
     let (_, r) = rig();
     r.tick(0);
-    let h = crate::presets::PresetHandler::new(&r, Preset::One, 1, rs_matter::dm::Dataver::new(0));
-    h.timed_on(true, 10, 0).unwrap();
-    assert!(!r.endpoint_on(Preset::One).unwrap());
-    h.timed_on(false, 100, 0).unwrap();
-    r.set_endpoint(Preset::Two, true).unwrap();
-    h.tick(1);
-    assert!(r.endpoint_on(Preset::Two).unwrap());
-    h.timed_on(false, 2, 0).unwrap();
-    h.tick(2);
-    assert!(!r.snapshot().intended.on);
+    r.set_power(true).unwrap();
+    r.set_level_transition(0, true, 1000).unwrap();
+    r.tick(500);
+    assert!(r.acknowledged().unwrap().on);
+    r.tick(1000);
+    assert!(!r.acknowledged().unwrap().on);
+    r.set_level_transition(254, true, 2000).unwrap();
+    r.tick(1500);
+    r.set_power(false).unwrap();
+    r.tick(4000);
+    assert!(!r.acknowledged().unwrap().on);
+    assert_eq!(r.level_remaining_ms(), 0);
 }
+
 #[test]
-fn reboot_best_effort_off_keeps_intent_and_cannot_reapply_during_flush() {
+fn out_of_band_settings_while_off_do_not_energize_output() {
+    let (_, r) = rig();
+    r.tick(0);
+    r.set_level(Level::MAX, false).unwrap();
+    r.set_temperature(ColorTemperature::MIN).unwrap();
+    assert!(!r.acknowledged().unwrap().on);
+    r.set_power(true).unwrap();
+    assert_eq!(r.acknowledged().unwrap().level, Level::MAX);
+    assert_eq!(r.acknowledged().unwrap().temperature, ColorTemperature::MIN);
+}
+
+#[test]
+fn failed_fade_recovers_to_its_durable_destination() {
     let (h, r) = rig();
     r.tick(0);
-    r.set_endpoint(Preset::Two, true).unwrap();
+    r.set_power(true).unwrap();
+    r.set_level_transition(254, false, 1000).unwrap();
+    h.fail_output.set(true);
+    r.tick(500);
+    assert!(r.acknowledged().is_err());
+    h.fail_output.set(false);
+    r.tick(5500);
+    assert_eq!(r.acknowledged().unwrap().level, Level::MAX);
+    assert_eq!(r.level_remaining_ms(), 0);
+}
+
+#[test]
+fn reboot_shutdown_keeps_target_and_cannot_reapply_during_usb_flush() {
+    let (h, r) = rig();
+    r.tick(0);
+    r.set_power(true).unwrap();
+    r.set_temperature(ColorTemperature::MIN).unwrap();
     assert!(r.prepare_reboot());
     r.tick(60_000);
     assert!(!h.actual.get().unwrap().on);
-    assert!(r.set_endpoint(Preset::One, true).is_err());
+    assert!(r.set_power(true).is_err());
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
-    assert!(reboot.endpoint_on(Preset::Two).unwrap());
+    assert!(reboot.acknowledged().unwrap().on);
+    assert_eq!(
+        reboot.acknowledged().unwrap().temperature,
+        ColorTemperature::MIN
+    );
 }
+
 #[test]
-fn watchdog_test_requires_verified_output_and_does_not_change_it() {
+fn watchdog_test_requires_settled_verified_output_without_changing_it() {
     let (h, r) = rig();
     assert!(r.watchdog_test_ready().is_err());
     r.tick(0);
-    r.set_endpoint(Preset::Two, true).unwrap();
+    r.set_power(true).unwrap();
     let state = h.actual.get();
     let records = h.records.borrow().clone();
     h.events.borrow_mut().clear();
@@ -322,18 +443,151 @@ fn watchdog_test_requires_verified_output_and_does_not_change_it() {
     assert_eq!(h.actual.get(), state);
     assert_eq!(*h.records.borrow(), records);
     assert!(h.events.borrow().is_empty());
+    r.set_level_transition(254, false, 1000).unwrap();
+    assert!(r.watchdog_test_ready().is_err());
+    r.tick(1000);
     h.fail_output.set(true);
     assert!(r.watchdog_test_ready().is_err());
-    assert_eq!(r.snapshot().applied, None);
+    assert!(r.acknowledged().is_err());
 }
+
 #[test]
-fn failed_diagnostic_read_invalidates_acknowledged_output() {
+fn failed_diagnostic_read_invalidates_acknowledgement() {
     let (h, r) = rig();
     r.tick(0);
     h.fail_output.set(true);
     assert!(r.registers().is_err());
-    assert_eq!(r.snapshot().applied, None);
+    assert!(r.acknowledged().is_err());
 }
+
+#[test]
+fn repeated_on_preserves_both_fades_and_successful_recovery_clears_backoff() {
+    let (h, r) = rig();
+    r.tick(0);
+    r.set_power(true).unwrap();
+    r.set_level_transition(254, false, 2000).unwrap();
+    r.set_temperature_transition(ColorTemperature::MIN, 2000)
+        .unwrap();
+    r.tick(500);
+    let intermediate = r.acknowledged().unwrap();
+    r.set_power(true).unwrap();
+    assert_eq!(r.acknowledged().unwrap(), intermediate);
+    assert_eq!(r.level_remaining_ms(), 1500);
+    assert_eq!(r.temperature_remaining_ms(), 1500);
+    h.fail_output.set(true);
+    r.tick(1000);
+    assert!(r.acknowledged().is_err());
+    h.fail_output.set(false);
+    r.set_power(true).unwrap();
+    let recovered = r.acknowledged().unwrap();
+    r.tick(1500);
+    assert!(r.acknowledged().unwrap().level > recovered.level);
+    assert!(r.acknowledged().unwrap().temperature < recovered.temperature);
+    r.tick(2000);
+    assert_eq!(r.acknowledged().unwrap().level, Level::MAX);
+    assert_eq!(r.acknowledged().unwrap().temperature, ColorTemperature::MIN);
+}
+
+#[test]
+fn scene_duration_limit_is_supported_and_out_of_range_rejected_without_mutation() {
+    let (_, r) = rig();
+    r.tick(0);
+    r.set_power(true).unwrap();
+    r.set_level_transition(254, false, 60_000_000).unwrap();
+    r.set_temperature_transition(ColorTemperature::MIN, 60_000_000)
+        .unwrap();
+    assert!(r.set_level_transition(1, false, 60_000_001).is_err());
+    assert!(r
+        .set_temperature_transition(ColorTemperature::MAX, 60_000_001)
+        .is_err());
+    r.tick(30_000_000);
+    assert!(r.acknowledged().unwrap().level < Level::MAX);
+    r.tick(60_000_000);
+    assert_eq!(r.acknowledged().unwrap().level, Level::MAX);
+    assert_eq!(r.acknowledged().unwrap().temperature, ColorTemperature::MIN);
+}
+
+#[test]
+fn off_effects_keep_the_saved_level_and_never_persist_intermediate_frames() {
+    use crate::runtime::OffEffect;
+    for (effect, midpoint_ms, midpoint_level, end_ms) in [
+        (OffEffect::FastFade, 400, 51, 800),
+        (OffEffect::SlowFade, 800, 50, 12_800),
+        (OffEffect::DyingLight, 500, 120, 1_500),
+    ] {
+        let (h, r) = rig();
+        r.tick(0);
+        r.set_level_transition(100, true, 0).unwrap();
+        h.events.borrow_mut().clear();
+        r.off_with_effect(effect).unwrap();
+        assert!(!r.snapshot().intended.on);
+        assert_eq!(r.snapshot().intended.level.get(), 100);
+        assert_eq!(
+            h.events
+                .borrow()
+                .iter()
+                .filter(|e| e.starts_with("store:"))
+                .count(),
+            1
+        );
+        h.events.borrow_mut().clear();
+        r.tick(midpoint_ms);
+        assert!(r.acknowledged().unwrap().on);
+        assert_eq!(r.acknowledged().unwrap().level.get(), midpoint_level);
+        r.tick(end_ms);
+        assert!(!r.acknowledged().unwrap().on);
+        assert_eq!(r.acknowledged().unwrap().level.get(), 100);
+        assert!(!h.events.borrow().iter().any(|e| e.starts_with("store:")));
+        let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
+        reboot.tick(0);
+        assert!(!reboot.acknowledged().unwrap().on);
+        reboot.set_power(true).unwrap();
+        assert_eq!(reboot.acknowledged().unwrap().level.get(), 100);
+    }
+    let (_, r) = rig();
+    r.tick(0);
+    r.set_power(true).unwrap();
+    r.off_with_effect(OffEffect::NoFade).unwrap();
+    assert!(!r.acknowledged().unwrap().on);
+    assert_eq!(r.level_remaining_ms(), 0);
+}
+
+#[test]
+fn scene_recall_commits_all_axes_once_before_output_and_restores_the_destination() {
+    let (h, r) = rig();
+    r.tick(0);
+    let target = LightState {
+        on: true,
+        level: Level::MAX,
+        temperature: ColorTemperature::MIN,
+    };
+    h.events.borrow_mut().clear();
+    r.recall_scene(target, 1000).unwrap();
+    assert_eq!(r.snapshot().intended, target);
+    assert_eq!(h.events.borrow()[0], format!("store:{INTENT_KEY}"));
+    assert_eq!(
+        h.events
+            .borrow()
+            .iter()
+            .filter(|e| e.starts_with("store:"))
+            .count(),
+        1
+    );
+    r.tick(500);
+    assert!(r.acknowledged().unwrap().level < target.level);
+    let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
+    reboot.tick(0);
+    assert_eq!(reboot.acknowledged().unwrap(), target);
+    h.fail_store.set(true);
+    assert!(reboot.recall_scene(LightState::default(), 0).is_err());
+    assert!(reboot.acknowledged().is_err());
+    // No partially saved power/level/temperature tuple replaced the prior scene.
+    h.fail_store.set(false);
+    let next_boot = Runtime::load(Access(h.clone()), Output(h.clone()));
+    next_boot.tick(0);
+    assert_eq!(next_boot.acknowledged().unwrap(), target);
+}
+
 #[test]
 fn local_network_deadline_ignores_absent_ap_and_accepts_ipv6_without_dhcp() {
     let mut health = crate::recovery::LocalNetHealth::default();

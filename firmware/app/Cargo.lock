@@ -1417,7 +1417,6 @@ version = "0.22.0"
 source = "git+https://github.com/esp-rs/esp-hal?rev=10e48dd74837bae4be663a7d1825d12875363727#10e48dd74837bae4be663a7d1825d12875363727"
 dependencies = [
  "document-features",
- "object",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -1442,8 +1441,8 @@ dependencies = [
  "esp-hal",
  "esp-metadata-generated",
  "esp-sync",
- "esp-wifi-sys-esp32c6",
- "esp32c6",
+ "esp-wifi-sys-esp32c3",
+ "esp32c3",
 ]
 
 [[package]]
@@ -1485,8 +1484,8 @@ dependencies = [
  "esp-radio-rtos-driver",
  "esp-rom-sys",
  "esp-sync",
- "esp-wifi-sys-esp32c6",
- "esp32c6",
+ "esp-wifi-sys-esp32c3",
+ "esp32c3",
  "heapless 0.9.3",
  "ieee802154",
  "instability",
@@ -1524,7 +1523,7 @@ dependencies = [
  "cfg-if",
  "document-features",
  "esp-metadata-generated",
- "esp32c6",
+ "esp32c3",
 ]
 
 [[package]]
@@ -1582,10 +1581,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "esp-wifi-sys-esp32c6"
+name = "esp-wifi-sys-esp32c3"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57649401fc2f906a16e2268de88693724a125adcd0eba89b594a157affcee2d5"
+checksum = "b290846b53db9a3965866964260220b67f2c41cc2dbc0b377e7136239fe168a7"
 
 [[package]]
 name = "esp32"
@@ -2087,6 +2086,7 @@ dependencies = [
  "esp-backtrace",
  "esp-bootloader-esp-idf",
  "esp-hal",
+ "esp-metadata-generated",
  "esp-println",
  "esp-radio",
  "esp-rtos",
@@ -2094,6 +2094,7 @@ dependencies = [
  "heapless 0.8.0",
  "key-right-core",
  "log",
+ "portable-atomic",
  "rs-matter-embassy",
  "static_cell",
  "tinyrlibc",

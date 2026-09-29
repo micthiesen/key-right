@@ -10,8 +10,10 @@ complete and LEDs are disconnected. User measurements establish the connection
 points, bus levels, and existing pull-ups. Powered ESP/PCA operation and light
 output remain untested. [Signed firmware emulation](references/firmware-analysis.md)
 establishes the selected address/configuration, channel order, and nominal 3%
-commands for the user's 3300 K and 5000 K presets. Both the earlier direct-PWM
-proposal and subsequent XIAO C6/buck plan are superseded; neither is assembly guidance.
+reference commands at 3300 K and 5000 K. The current design exposes one Matter
+Color Temperature Light per lamp with stock nominal 1–10% brightness and
+143–344 mired temperature. Two physical lamps are grouped in Home; see
+[the spec](spec.md) for the control contract.
 
 ## Actual light and photos
 
@@ -72,13 +74,11 @@ documents GPIO multiplexing, including the alternate pad-JTAG functions on
 GPIO4/5/6. The [native USB Serial/JTAG guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/api-guides/usb-serial-jtag-console.html)
 documents the fixed USB peripheral. Neither identifies this third-party board's
 antenna routing or flash capacity. Do not infer an antenna GPIO or MINI-1U module
-identity. The C3 port must preserve USB GPIO18/19 and use open-drain GPIO6.
-
-The earlier [Seeed pin guide](https://wiki.seeedstudio.com/xiao_esp32c6_getting_started/)
-and [XIAO schematic](https://files.seeedstudio.com/wiki/SeeedStudio-XIAO-ESP32C6/XIAO-ESP32-C6_v1.0_SCH_PDF_24028.pdf)
-remain historical sources for the old C6/buck design only. Its power-isolation
-procedure does not apply to the installed C3; use the five-wire/USB rules in
-[hardware.md](hardware.md).
+identity. Preserve USB GPIO18/19 and use open-drain GPIO6. The September 28
+[component-side board photo](references/photos/esp32-c3-mini-v1.png) shows the
+USB-C connector, buttons, onboard antenna component, and antenna socket. It
+does not prove RF routing or electrical function. Use the measured five-wire
+map and USB power rule in [hardware.md](hardware.md).
 
 ## Original-controller research
 
@@ -106,7 +106,7 @@ The [latest listed original Key Light firmware](https://help.elgato.com/hc/en-us
 - [Key Light Mini firmware research](https://github.com/schlarpc/elgato-key-light-mini-firmware-re): firmware-container analysis, network update tooling, and demonstrated modified stock firmware on Mini board 202/build 240. Its container parser also describes older RTKWin images. Its bypass was NOT verified on original board 53. It is neither a replacement firmware nor a demonstrated Wi-Fi fix for this light.
 - [Author's account](https://schlarp.com/posts/everything-i-own-owned/).
 - [Realtek Ameba1 SDK](https://github.com/Ameba-AIoT/ameba-rtos-1): historical controller reference, not the selected target.
-- [Espressif Rust Wi-Fi documentation](https://docs.espressif.com/projects/rust/esp-wifi/0.15.0/esp32/esp_wifi/index.html): evidence of Rust support; select current compatible versions for the eventual board.
+- [Espressif Rust Wi-Fi documentation](https://docs.espressif.com/projects/rust/esp-wifi/0.15.0/esp32/esp_wifi/index.html): historical Rust-support reference; [development.md](development.md) records the pinned C3 stack.
 - [ESP-IDF Wi-Fi documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/wifi-driver/index.html).
 - [Embedded Rust/C interoperability](https://doc.rust-lang.org/embedded-book/interoperability/c-with-rust.html).
 
@@ -125,11 +125,10 @@ is Stillair commit `af12fec55430b4af7704dd89636bdd102a0c4158`, particularly
 `firmware/app/src/matter.rs`, `firmware/app/src/output.rs`, its Cargo manifest,
 lockfile, and RISC-V target configuration.
 
-Stillair uses ESP32-C6, `rs-matter-embassy`, concurrent BLE commissioning and Wi-Fi,
-hardware-seeded randomness, and an NVS partition discovered from the flash partition
-table. Keep its dependency revisions together when adapting the stack. Its fan
-handler and motor GPIO configuration do not apply to Key Right. The current
-application remains C6-only; see [development.md](development.md) for the C3 port
-requirements and remaining validation. The handoff's C++/ESP-Matter rewrite,
-30% brightness default, generic calibration system, and changed restart/fault
-policies were not adopted.
+The reused `rs-matter-embassy` stack supplies concurrent BLE commissioning and
+Wi-Fi, hardware-seeded randomness, and an NVS partition discovered from the
+flash partition table. Keep compatible dependency revisions together. Stillair's
+fan handler and motor GPIO configuration do not apply to Key Right's C3 board.
+See [development.md](development.md) for build details and remaining validation.
+The handoff's C++/ESP-Matter rewrite, 30% brightness default, generic calibration
+system, and changed restart/fault policies were not adopted.

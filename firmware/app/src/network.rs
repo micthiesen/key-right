@@ -1,7 +1,7 @@
 //! Adapted from pinned rs-matter-embassy wifi/esp.rs, adding operation deadlines.
-use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{with_timeout, Duration};
+use portable_atomic::{AtomicI32, AtomicU32, Ordering};
 pub static RESTART: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static TIMEOUTS: AtomicU32 = AtomicU32::new(0);
 static ATTEMPTS: AtomicU32 = AtomicU32::new(0);
@@ -103,7 +103,7 @@ impl Controller<'_> {
                 bssid: &ap.bssid,
                 channel: ap.channel as _,
                 rssi: ap.signal_strength,
-                band: WiFiBandEnum::V2G4, // ESP32-C6 is a 2.4 GHz radio.
+                band: WiFiBandEnum::V2G4, // ESP32-C3 is a 2.4 GHz radio.
                 security: match ap.auth_method {
                     Some(AuthenticationMethod::None) => WiFiSecurityBitmap::UNENCRYPTED,
                     Some(AuthenticationMethod::Wep) => WiFiSecurityBitmap::WEP,

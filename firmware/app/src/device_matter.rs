@@ -11,13 +11,18 @@ use esp_hal::peripherals::{ADC1, BT, FLASH, RNG, WIFI};
 use esp_hal::rng::{Trng, TrngSource};
 use heapless::String;
 use rs_matter_embassy::matter::crypto::{default_crypto, Crypto};
-use rs_matter_embassy::matter::dm::clusters::app::on_off;
+use rs_matter_embassy::matter::dm::clusters::app::{color_control, level_control, on_off};
 use rs_matter_embassy::matter::dm::clusters::basic_info::BasicInfoConfig;
 use rs_matter_embassy::matter::dm::clusters::desc::{self, ClusterHandler as _};
+use rs_matter_embassy::matter::dm::clusters::groups::{self, GroupsHandler};
 use rs_matter_embassy::matter::dm::clusters::identify;
+use rs_matter_embassy::matter::dm::clusters::scenes::{
+    self, SceneInvalidator, ScenesHandler, ScenesState,
+};
 use rs_matter_embassy::matter::dm::devices::test::{DAC_PRIVKEY, TEST_DEV_ATT, TEST_PID, TEST_VID};
-use rs_matter_embassy::matter::dm::devices::DEV_TYPE_ON_OFF_LIGHT;
-use rs_matter_embassy::matter::dm::{Async, Dataver, EmptyHandler, Endpoint, EpClMatcher, Node};
+use rs_matter_embassy::matter::dm::{
+    Async, Dataver, DeviceType, EmptyHandler, Endpoint, EpClMatcher, Node,
+};
 use rs_matter_embassy::matter::error::{Error, ErrorCode};
 use rs_matter_embassy::matter::utils::init::InitMaybeUninit;
 use rs_matter_embassy::matter::{clusters, devices, BasicCommData};
@@ -25,13 +30,10 @@ use rs_matter_embassy::stack::rand::reseeding_csprng;
 use rs_matter_embassy::wireless::{EmbassyWifi, EmbassyWifiMatterStack};
 use static_cell::StaticCell;
 
-use crate::presets::{self, PresetHandler};
+use crate::presets::{self, AtomicScenes, LightHandler, SceneLevel, ScenePower, SceneTemperature};
 use crate::runtime::Runtime;
 use crate::storage::{commissioning_passcode, persistent_store};
-use key_right_core::Preset;
-use rs_matter_embassy::matter::dm::clusters::fixed_label::{
-    ClusterHandler as _, FixedLabelEntry, FixedLabelHandler,
-};
+use rs_matter_embassy::matter::persist::KV_BUF_SIZE;
 
 // Large objects are initialized in place so no temporary overflows the task stack.
 macro_rules! mk_static {
@@ -43,6 +45,10 @@ macro_rules! mk_static {
 
 const BUMP_SIZE: usize = 20_000;
 const LIGHT_ENDPOINT: u16 = 1;
+const COLOR_TEMPERATURE_LIGHT: DeviceType = DeviceType {
+    dtype: 0x010c,
+    drev: 4,
+};
 const RETRY_DELAY: Duration = Duration::from_secs(5);
 
 const NODE: Node = Node {
@@ -50,33 +56,26 @@ const NODE: Node = Node {
         EmbassyWifiMatterStack::<0, ()>::root_endpoint(),
         Endpoint::new(
             LIGHT_ENDPOINT,
-            devices!(DEV_TYPE_ON_OFF_LIGHT),
+            devices!(COLOR_TEMPERATURE_LIGHT),
             clusters!(
                 desc::DescHandler::CLUSTER,
                 identify::CLUSTER,
-                presets::CLUSTER,
-                FixedLabelHandler::CLUSTER
-            ),
-        ),
-        Endpoint::new(
-            2,
-            devices!(DEV_TYPE_ON_OFF_LIGHT),
-            clusters!(
-                desc::DescHandler::CLUSTER,
-                identify::CLUSTER,
-                presets::CLUSTER,
-                FixedLabelHandler::CLUSTER
+                groups::FULL_CLUSTER.with_features(groups::Feature::GROUP_NAMES.bits()),
+                scenes::FULL_CLUSTER,
+                presets::ON_OFF_CLUSTER,
+                presets::LEVEL_CLUSTER,
+                presets::COLOR_CLUSTER
             ),
         ),
     ],
 };
 
-pub async fn run(
+pub async fn run<H: crate::runtime::Hardware>(
     entropy: (RNG<'static>, ADC1<'static>),
     wifi: WIFI<'static>,
     bt: BT<'static>,
     flash: FLASH<'static>,
-    hardware: crate::hardware::PhysicalOutput,
+    hardware: H,
     rx: esp_hal::usb::usb_serial_jtag::UsbSerialJtagRx<'static, esp_hal::Async>,
     mut watchdog: esp_hal::timer::timg::Wdt<esp_hal::peripherals::TIMG0<'static>>,
 ) -> ! {
@@ -119,10 +118,10 @@ pub async fn run(
         vid: TEST_VID,
         pid: TEST_PID,
         hw_ver: 1,
-        hw_ver_str: "XIAO ESP32C6",
+        hw_ver_str: "ESP32-C3_MINI_V1",
         sw_ver: 1,
         sw_ver_str: env!("CARGO_PKG_VERSION"),
-        device_type: Some(DEV_TYPE_ON_OFF_LIGHT.dtype),
+        device_type: Some(COLOR_TEMPERATURE_LIGHT.dtype),
         ..BasicInfoConfig::new()
     });
     let mac_bytes = mac.as_bytes();
@@ -149,69 +148,75 @@ pub async fn run(
         )
         .await;
     }
+    let scenes = mk_static!(ScenesState<16>).init_with(ScenesState::init());
+    let mut scene_buf = [0; KV_BUF_SIZE];
+    if let Err(error) = scenes.load_persist(&mut store, &mut scene_buf).await {
+        halted(
+            "Scenes could not be restored; NVS was preserved",
+            error,
+            &mut watchdog,
+        )
+        .await;
+    }
+    // Startup policy and a reset during recall can differ from the saved scene.
+    // Retain the table, but never restore a claim that its output is current.
+    scenes.scenable_attribute_changed(LIGHT_ENDPOINT);
     let kv = stack.matter().kv(store);
     let runtime = Runtime::load(&kv, hardware);
-    let one = PresetHandler::new(&runtime, Preset::One, 1, Dataver::new_rand(&mut weak_rand));
-    let two = PresetHandler::new(&runtime, Preset::Two, 2, Dataver::new_rand(&mut weak_rand));
+    let light = LightHandler::new(
+        &runtime,
+        scenes,
+        [
+            Dataver::new_rand(&mut weak_rand),
+            Dataver::new_rand(&mut weak_rand),
+            Dataver::new_rand(&mut weak_rand),
+        ],
+    );
+    let scene_handler = ScenesHandler::new(
+        Dataver::new_rand(&mut weak_rand),
+        scenes,
+        (
+            ScenePower(&light),
+            (SceneLevel(&light), (SceneTemperature(&light), ())),
+        ),
+    );
     let handler = EmptyHandler
         .chain(
-            EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(presets::CLUSTER.id)),
-            on_off::HandlerAsyncAdaptor(&one),
+            EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(presets::ON_OFF_CLUSTER.id)),
+            on_off::HandlerAsyncAdaptor(&light),
+        )
+        .chain(
+            EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(presets::LEVEL_CLUSTER.id)),
+            level_control::HandlerAsyncAdaptor(&light),
+        )
+        .chain(
+            EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(presets::COLOR_CLUSTER.id)),
+            color_control::HandlerAsyncAdaptor(&light),
         )
         .chain(
             EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(identify::CLUSTER.id)),
-            // No physical indicator in the bench image; IdentifyType is None.
             Async(identify::IdentifyHandler::new(Dataver::new_rand(
                 &mut weak_rand,
             ))),
+        )
+        .chain(
+            EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(groups::FULL_CLUSTER.id)),
+            Async(GroupsHandler::new(Dataver::new_rand(&mut weak_rand)).adapt()),
+        )
+        .chain(
+            EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(scenes::FULL_CLUSTER.id)),
+            AtomicScenes {
+                inner: scene_handler.adapt(),
+                light: &light,
+            },
         )
         .chain(
             EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(desc::DescHandler::CLUSTER.id)),
             Async(desc::DescHandler::new(Dataver::new_rand(&mut weak_rand)).adapt()),
-        )
-        .chain(
-            EpClMatcher::new(Some(1), Some(FixedLabelHandler::CLUSTER.id)),
-            Async(
-                FixedLabelHandler::new(
-                    Dataver::new_rand(&mut weak_rand),
-                    &[FixedLabelEntry {
-                        label: "preset",
-                        value: "3300 K",
-                    }],
-                )
-                .adapt(),
-            ),
-        )
-        .chain(
-            EpClMatcher::new(Some(2), Some(presets::CLUSTER.id)),
-            on_off::HandlerAsyncAdaptor(&two),
-        )
-        .chain(
-            EpClMatcher::new(Some(2), Some(identify::CLUSTER.id)),
-            Async(identify::IdentifyHandler::new(Dataver::new_rand(
-                &mut weak_rand,
-            ))),
-        )
-        .chain(
-            EpClMatcher::new(Some(2), Some(desc::DescHandler::CLUSTER.id)),
-            Async(desc::DescHandler::new(Dataver::new_rand(&mut weak_rand)).adapt()),
-        )
-        .chain(
-            EpClMatcher::new(Some(2), Some(FixedLabelHandler::CLUSTER.id)),
-            Async(
-                FixedLabelHandler::new(
-                    Dataver::new_rand(&mut weak_rand),
-                    &[FixedLabelEntry {
-                        label: "preset",
-                        value: "5000 K",
-                    }],
-                )
-                .adapt(),
-            ),
         );
     let mut driver = EspWifiDriver::new(wifi, bt);
 
-    log::warn!("identity={identity}; stock PCA presets; public development attestation");
+    log::warn!("identity={identity}; color-temperature light; public development attestation");
     let open_commissioning = || {
         if stack.is_commissioned() {
             return Err(Error::from(ErrorCode::InvalidState));
@@ -248,7 +253,7 @@ pub async fn run(
     join3(
         transport,
         crate::console::run(rx, &runtime, &pairing_code, open_commissioning),
-        presets::maintenance(&runtime, [&one, &two], || watchdog.feed()),
+        presets::maintenance(&runtime, &light, || watchdog.feed()),
     )
     .await;
     unreachable!()

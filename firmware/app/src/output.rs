@@ -2,7 +2,7 @@
 //! A disconnected USB host can drop logs without blocking the Matter task.
 
 use core::fmt::Write as _;
-use core::sync::atomic::{AtomicU32, Ordering};
+use portable_atomic::{AtomicU32, Ordering};
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
@@ -19,7 +19,6 @@ struct Record {
 static LINES: Channel<CriticalSectionRawMutex, Record, 16> = Channel::new();
 static DROPPED: AtomicU32 = AtomicU32::new(0);
 static TOTAL_DROPPED: AtomicU32 = AtomicU32::new(0);
-#[cfg(feature = "hardware-light")]
 static FLUSHED: embassy_sync::signal::Signal<CriticalSectionRawMutex, ()> =
     embassy_sync::signal::Signal::new();
 
@@ -29,7 +28,7 @@ impl log::Log for QueueLogger {
     fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
         metadata.level() <= log::Level::Info
             // Hardware commissioning credentials are returned only by an explicit USB command.
-            && !(cfg!(feature = "hardware-light") && metadata.target() == "rs_matter")
+            && metadata.target() != "rs_matter"
     }
 
     fn log(&self, record: &log::Record<'_>) {
@@ -56,16 +55,19 @@ impl log::Log for QueueLogger {
 static LOGGER: QueueLogger = QueueLogger;
 
 pub fn init() {
-    log::set_logger(&LOGGER).expect("install USB logger once");
-    log::set_max_level(log::LevelFilter::Info);
+    // C3 lacks native CAS. Both entry points call this before starting the RTOS
+    // or spawning tasks; these are the application's only logger/level writes.
+    // SAFETY: initialization cannot race another logger or max-level setter.
+    unsafe {
+        log::set_logger_racy(&LOGGER).expect("install USB logger once");
+        log::set_max_level_racy(log::LevelFilter::Info);
+    }
 }
 
-#[cfg(feature = "hardware-light")]
 pub async fn response(line: Line) {
     LINES.send(Record { line, flush: false }).await;
 }
 
-#[cfg(feature = "hardware-light")]
 pub async fn response_and_flush(line: Line) {
     FLUSHED.reset();
     let _ = embassy_time::with_timeout(embassy_time::Duration::from_secs(1), async {
@@ -75,7 +77,6 @@ pub async fn response_and_flush(line: Line) {
     .await;
 }
 
-#[cfg(feature = "hardware-light")]
 pub fn dropped() -> u32 {
     TOTAL_DROPPED.load(Ordering::Relaxed)
 }
@@ -94,7 +95,6 @@ pub async fn writer_task(mut tx: UsbSerialJtagTx<'static, Async>) {
         let _ = tx.write_all(b"\n").await;
         if record.flush {
             let _ = tx.flush().await;
-            #[cfg(feature = "hardware-light")]
             FLUSHED.signal(());
         }
     }

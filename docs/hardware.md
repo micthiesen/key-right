@@ -3,7 +3,16 @@
 The original Realtek controller module has been removed from Michael's original
 full-size Elgato Key Light. Its replacement is the blue **ESP32-C3_MINI_V1**
 development board with USB-C, BOOT and RESET buttons, and a bare ESP32-C3 package.
-This is not a Seeed XIAO ESP32-C6 or an official ESP32-C3-MINI-1U module.
+It is not an official ESP32-C3-MINI-1U module.
+
+![Component side of the blue ESP32-C3_MINI_V1 board, with USB-C at the top, BOOT and RESET buttons, and an antenna socket at the lower right](references/photos/esp32-c3-mini-v1.png)
+
+User photo supplied on 2026-09-28, converted from `IMG_3632.heic` to a
+1576 × 2102 PNG without cropping or rotation. The board identity comes from its
+reported reverse-side `ESP32-C3_MINI_V1` marking. This component-side photo shows
+USB-C, the buttons, the onboard antenna component, and the antenna socket; it
+does not establish the RF routing, an antenna-switch GPIO, or electrical wiring.
+The firmware uses the C3's native USB Serial/JTAG peripheral.
 
 On **2026-09-28**, Michael reported that the board wiring was complete. The LED
 panels are **not connected**. The assembly is ready for bench-PSU testing and
@@ -76,9 +85,10 @@ depends on MODE2 and does not by itself prove that the lamp is dark.
 
 Plan for **4 MiB flash and no PSRAM**. Read chip identity and flash ID/capacity
 from the connected board before flashing; the actual capacity remains unverified.
-The current Rust MCU application and flash helper still target the XIAO ESP32-C6.
-They cannot be used to flash this C3 until the board port and target checks are
-complete. [Development instructions](development.md) own that software status.
+The Rust MCU application targets `esp32c3`. The flash helper must reject a wrong
+chip or insufficient capacity before writing. [Development](development.md)
+owns build instructions; [bench bring-up](bench-bring-up.md) owns initial flashing
+and the physical checks.
 
 The handoff reports both an onboard antenna component and an external antenna
 socket visible in the board photos. Antenna routing/selection is hardware; there
@@ -119,18 +129,21 @@ of the modified assembly:
 | 3300 K, nominal 3% | Warm/cool raw PCA PWM values `6/2` | Output observation; these are not optical calibration |
 | 5000 K, nominal 3% | Warm/cool raw PCA PWM values `3/6` | Output observation; these are not optical calibration |
 
-Do not replace this established command baseline with guessed channels, pure
-warm/cool mixes, or a different brightness. If physical observations contradict
-it, record the contradiction before revising the model.
+The two 3% rows are regression points for the stock mixing model. The selected
+control range now maps Home brightness to stock nominal 1–10% and temperature
+to 143–344 mired; see [the spec](spec.md). Initial Matter level `57` retains
+`6/2` at 303 mired and `3/6` at 200 mired. Do not replace the established channels
+with guessed channels or pure warm/cool mixes. If physical observations
+contradict this model, record the contradiction before revising it.
 
 The PCA's power-on configuration differs from the configured stock mode. There
 is no independent output cutoff, and control of OE cannot guarantee darkness
 during ROM boot, cold start, controller reset, brownout, or an I²C failure. Bench
 tests with the LEDs disconnected can establish power, USB, GPIO, and controller
 communication, but cannot establish light output. Reconnect the LEDs only with
-power removed, then observe Off, both presets, startup/reset behavior, and
-network recovery separately. A register acknowledgement/readback is not a
-measurement of emitted light.
+power removed, then observe Off, brightness and temperature changes,
+startup/reset behavior, and network recovery separately. A register
+acknowledgement/readback is not a measurement of emitted light.
 
 ## Evidence provenance
 
@@ -140,5 +153,5 @@ power rule were incorporated from the
 That handoff cites Michael's completed probing worksheet and
 `Elgato_Key_Light_C3_Wiring_Field_Guide.pdf`; those attachments are not in this
 repository. The handoff text is the available record of their reported findings.
-The older [repository field guide](field-guides/key-right/README.md) describes the
-superseded C6/buck plan and is archival, not the installed wiring instructions.
+The current [bench guide](bench-bring-up.md) uses this reported map and keeps
+unperformed tests separate from established measurements.

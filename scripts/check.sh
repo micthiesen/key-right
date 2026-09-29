@@ -8,5 +8,5 @@ export PATH="$HOME/.cargo/bin:$PATH"
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
-cargo run -p key-right-cli --locked -- simulate on preset-2 brightness=100 off
+cargo run -p key-right-cli --locked -- simulate on preset-2 level=254 mired=303 off
 python3 -m unittest discover -s scripts/tests -v

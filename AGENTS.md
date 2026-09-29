@@ -13,14 +13,13 @@ product goals.
 - `docs/development.md` records build, flashing, console use, and coverage.
 - `firmware/core` is dependency-free `no_std` state and PCA9635 logic.
 - `firmware/cli` runs the core against an in-memory adapter.
-- `firmware/app` is the separate Matter workspace adapted from Stillair; it still
-  targets the old XIAO ESP32-C6 and requires a C3 port before flashing this assembly.
+- `firmware/app` is the separate ESP32-C3 Matter workspace adapted from Stillair.
 - `scripts/check.sh` and `scripts/check-firmware.sh` are host and MCU gates.
 
 The installed board is marked ESP32-C3_MINI_V1, not an official MINI-1U module.
 GPIO4 is SDA, GPIO5 SCL, and GPIO6 active-low PCA OE. OE must be open-drain:
 set/release HIGH before enabling output mode, then drive LOW to enable the PCA.
-Preserve native USB on GPIO18/19; do not copy XIAO antenna GPIO3/14 writes.
+Preserve native USB on GPIO18/19; do not invent an antenna-selection GPIO.
 Stock U3 is the PCA9635 at address `0x15`, 100 kHz; stock active channels are
 LED0/warm and LED4/cool. `docs/hardware.md` owns the user-measured five-wire pad
 map and 3.37 V bus/rail readings with approximately 9.9 kΩ pull-ups. These settle
@@ -32,18 +31,27 @@ No buck, C3 `5V` connection, extra pull-ups, translator, lifted PCA pins, or out
 interlock is part of the design. The rocker is already bypassed ON. With lamp
 wiring attached, use lamp/bench power and USB with VBUS blocked, data and ground
 intact. Ordinary powered USB requires disconnecting all five lamp wires first;
-unplugging the lamp adapter alone is insufficient. The old C6/buck PDF is historical.
+unplugging the lamp adapter alone is insufficient.
 On 2026-09-28 the user reported wiring complete, LEDs disconnected, ready for bench
 PSU bring-up. Flashing, powered bench operation, and LED-output tests remain pending.
 Do not claim off during cold start, reset, or brownout until the actual light is
 observed; there is no independent output cutoff.
 
-Keep the Rust stack, saved-intent/startup policy, and automatic recovery behavior.
-The two fixed presets are 3300 K and 5000 K. Signed firmware emulation establishes
-warm/cool raw PCA values 6/2 and 3/6 at nominal 3%; these are commands, not an
-optical calibration. Keep intended, acknowledged, and measured physical output
-distinct. Network recovery must preserve intent and cannot be claimed from
-simulated tests.
+Keep the Rust stack, durable intent/startup policy, and automatic recovery.
+Each lamp is one Matter Color Temperature Light (device type `0x010C`), with
+On/Off, real dimming, and temperature-only Color Control. Home's nonzero 1–100%
+brightness maps to stock nominal 1–10%; Home 100% is the 10% ceiling. Support
+143–344 mired. First boot is Off with level 57 (about Home 22%, stock 3%) and
+303 mired. At level 57, preserve raw warm/cool 6/2 at 303 mired and 3/6 at 200
+mired. These are command regressions, not optical calibration. Low output has
+eight-bit PCA quantization. Do not advertise RGB or Adaptive Lighting.
+
+Two physical lamps are two separately commissioned nodes grouped in Apple Home;
+firmware does not couple them or promise simultaneous output. The former
+3300 K/5000 K presets are optional Home scenes, not firmware endpoints. Preserve
+power, level, temperature, pairing, and startup intent across normal resets and
+flashes. Keep intended, acknowledged, and measured physical output distinct.
+Network recovery must preserve intent and cannot be claimed from simulated tests.
 
 Use Rust, Cargo, rustfmt, Clippy, and Rust tests. Follow `../triplet` and
 `../stillair` for compatible embedded conventions and preserve the pinned Matter
@@ -62,12 +70,15 @@ sh scripts/check-firmware.sh
 ```
 
 Use `cargo fmt --all` at the root and `cargo fmt` in `firmware/app`. The MCU gate
-currently builds explicit real and simulated C6 images, not C3 compatibility.
+builds explicit real and simulated C3 images for `riscv32imc-unknown-none-elf`.
+Keep the C3 heap split across ordinary and reclaimed bootloader RAM. The MCU
+gate and flash helper reject linked main-stack reservations below 16 KiB;
+passing that gate does not measure runtime stack or heap use.
 Host tests cannot establish wiring, PCA bus levels, startup behavior, radio
 performance in the closed housing, or physical output. Keep bench simulation
 separate from real I/O and record physical results in `docs/validation-record.md`.
-No credentials or hardware are needed for
-the software gates.
+No credentials or hardware are needed for the software gates. Follow
+`docs/bench-bring-up.md` for powered testing, with results recorded separately.
 
 Personal project: review, verify, commit, and push completed scoped changes to
 `main`. Preserve concurrent changes and existing reference material. Update these

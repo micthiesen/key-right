@@ -1,4 +1,4 @@
-//! Bounded I2C to the retained PCA9635; GPIO21 optionally drives its stock OE.
+//! Bounded I2C on GPIO4/5; open-drain GPIO6 drives the retained PCA9635 OE.
 use crate::runtime::{Hardware, OutputError};
 use core::convert::Infallible;
 use esp_hal::gpio::Output;

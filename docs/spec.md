@@ -6,25 +6,28 @@ Replace only the original full-size Elgato Key Light's Realtek controller with
 the installed **ESP32-C3_MINI_V1** board. Retain the PCA9635, stock LED power and
 current-limiting circuitry, LED panels, housing, and 13 V / 4 A adapter. Provide
 local Apple Home control through Matter over 2.4 GHz Wi-Fi, BLE commissioning,
-and automatic recovery without cloud services or Homebridge.
+and automatic recovery without cloud services or Homebridge. Each physical lamp
+is one normal light in Home, with power, brightness, and white-temperature
+controls. Two lamps remain separate Matter nodes and can be grouped in Home.
 
 On **2026-09-28**, Michael reported that the boards are wired together. The LEDs
 are still disconnected; the assembly is ready for bench-PSU bring-up and flashing
 preparation. This records completed wiring, not a successful powered bench test,
 firmware flash, PCA transaction, or light-output test.
 
-The repository's firmware still targets the previously planned XIAO ESP32-C6.
-**A C3 port is required before flashing this assembly.** Passing the existing C6
-build gates does not make those images compatible with the installed C3.
+The firmware target is `esp32c3`, using `riscv32imc-unknown-none-elf`. Software
+validation and physical acceptance are separate; passing build gates does not
+establish correct wiring, USB power isolation, or physical lamp behavior.
 
 ## Design and evidence
 
 Keep the existing Rust architecture and compatible Stillair-derived Matter
 dependency set. The September 28 handoff supplies the actual board identity,
-five-wire map, and user measurements. Existing source code and
-[signed stock-firmware analysis](references/firmware-analysis.md) remain the basis
-for firmware behavior and preset commands. This is a single known lamp design,
-not a general channel-discovery or calibration platform.
+five-wire map, and user measurements. The user subsequently selected one light
+per lamp, Home grouping, and a low-light range capped at stock nominal 10%.
+[Signed stock-firmware analysis](references/firmware-analysis.md) remains the
+basis for the PCA configuration and warm/cool mixing. This is a single known
+lamp design, not a general channel-discovery or calibration platform.
 
 | Item | Project requirement or evidence | Remaining limit |
 | --- | --- | --- |
@@ -32,23 +35,56 @@ not a general channel-discovery or calibration platform.
 | Power and signal wiring | User-measured five-wire interface below | Rail behavior under ESP radio load has not been tested |
 | PCA address and bus | Seven-bit `0x15`, 100 kHz, from stock firmware | Physical I²C acknowledgement/readback pending |
 | Output configuration | Stock `MODE2=0x14`; individual PWM; LED0 warm, LED4 cool | Physical bank response and off-state pending |
-| Preset 1 | 3300 K, stock nominal 3%, raw warm/cool `6/2` | Command reproduction, not optical calibration |
-| Preset 2 | 5000 K, stock nominal 3%, raw warm/cool `3/6` | Command reproduction, not optical calibration |
+| Brightness range | Stock nominal 1% through 10%, mapped across Home's nonzero brightness range | Stock scale, not measured optical brightness or raw electrical PWM duty |
+| Temperature range | Stock 143 through 344 mired, approximately 6993 through 2907 K | Command range, not optical calibration |
+| Initial level | Matter level `57`, approximately Home 22% and stock nominal 3% | Preserve raw warm/cool `6/2` at 303 mired and `3/6` at 200 mired |
 
-The nominal 3% setting is the user's existing stock brightness setting, not a
-new 3% electrical-duty calculation. Keep those raw stock commands. No adjustable
-installation brightness, pure-bank defaults, alternate polarity wizard, or
-mandatory channel scan is required. If actual readback or light behavior
+The former 3300 K and 5000 K choices can be Home scenes; they are no longer
+separate firmware endpoints. No pure-bank defaults, alternate polarity wizard,
+or mandatory channel scan is required. If actual readback or light behavior
 contradicts the stock evidence, record and investigate it before changing the
-driver or presets.
+driver or mixing model.
+
+## Home control contract
+
+Expose one Matter Color Temperature Light endpoint, device type `0x010C`, per
+physical lamp. Support On/Off, Level Control, and temperature-only Color Control.
+Do not advertise RGB/hue/saturation control or Adaptive Lighting support.
+
+Home's nonzero 1% through 100% brightness range maps to stock nominal 1% through
+10%. **Home 100% means stock nominal 10%**, the user-selected ceiling; it does
+not unlock the stock lamp's full output. Dimming must change the PCA commands.
+Use Matter levels 1 through 254 for the nonzero range and level 0 for Off.
+Retain brightness and temperature intent while off. The first-boot state is Off
+with level `57` and 303 mired (about 3300 K) ready for the next On command.
+
+Support Matter Groups and Scenes Management on that endpoint, including a
+16-entry scene table. Level and temperature transitions run independently;
+Stop retains the last acknowledged setting for its axis. Persist the final
+destination once, not each interpolated frame. An explicit Off cancels pending
+transitions. Scene recall saves the complete power/level/temperature target
+together and reports actuation failures. Timed On/Off and OffWithEffect use the
+same state owner; effect frames do not replace the saved brightness setting.
+
+Support the full stock temperature command range, 143 through 344 mired. At the
+initial level `57`, 303 mired must reproduce warm/cool raw PCA values `6/2`, and
+200 mired (5000 K) must reproduce `3/6`. These are regression points from the
+former fixed presets, not additional endpoints. Eight-bit PCA quantization is
+visible at low output: adjacent slider settings can produce the same register
+values, and displayed percentages or Kelvin values are not measurements.
+
+Commission each lamp separately with its own stable identity and pairing data.
+Group the two accessories in Apple Home to send power, brightness, and
+temperature changes together. Grouping belongs to Home; firmware has no
+cross-lamp state or coupling. Delivery and transitions need not be simultaneous
+or frame-perfect, and one lamp's outage must not prevent the other operating.
 
 ## Installed hardware contract
 
 The board is the small blue USB-C board marked `ESP32-C3_MINI_V1`, with BOOT and
 RESET buttons and a bare ESP32-C3 package. It is not an official
-`ESP32-C3-MINI-1U` module. Its printed pad numbers are GPIO numbers, not XIAO
-`D` aliases. Do not carry over XIAO antenna-switch GPIOs or assume a firmware
-antenna-selection pin on this board.
+`ESP32-C3-MINI-1U` module. Its printed pad numbers are GPIO numbers, not board
+`D` aliases. Do not assume a firmware antenna-selection pin on this board.
 
 Orient the Key Light PCB with the white power resistors on the left and the
 removed U4 module footprint below U3/PCA9635. Count only U4's horizontal top row.
@@ -88,7 +124,7 @@ use USB with **VBUS/5 V blocked while data and ground remain connected**.
 A charging-only cable or USB data blocker does not meet this requirement.
 Ordinary powered USB requires disconnecting **all five lamp wires** from the
 C3 first. Merely unplugging the lamp adapter does not isolate its rail and signal
-paths. The earlier buck-lead-only disconnection procedure does not apply.
+paths.
 
 For initial bench work, leave the LEDs disconnected, verify input polarity, and
 record the bench PSU voltage and chosen current limit before energizing the
@@ -106,20 +142,18 @@ ESP, and no independent output cutoff.
 
 ### Controls and persistence
 
-- Expose one Matter node with two mutually exclusive On/Off Light endpoints:
-  endpoint 1 selects 3300 K; endpoint 2 selects 5000 K. Turning either on selects
-  it and reports the other off. Turning off an inactive endpoint leaves the
-  active preset on. Toggle follows the same model; repeated On is idempotent.
-- Do not advertise variable brightness or continuous color temperature. The
-  portable core ignores brightness writes without changing the fixed output.
-  Controller labels may need renaming in Apple Home.
+- Expose the single light and ranges above. Power, level, and temperature
+  commands share one state owner; repeated commands are idempotent. Report
+  the lamp's actual supported ranges so Home can present ordinary controls.
 - Use one serialized state owner for Matter and USB commands. Distinguish
   intended state, acknowledged PCA register state, and measured physical output.
   Never report a known failed write as successful actuation.
-- Preserve durable intended state and Matter membership across ordinary restarts
-  and flashes. First boot with no saved state defaults Off. Retain the existing
-  per-endpoint Matter startup policy; startup first attempts stock Off, then
-  reconciles saved intent and that policy. Do not replace this with unconditional
+- Preserve durable power, level, temperature, startup policy, and Matter
+  membership across ordinary restarts and flashes. Migrate prior saved preset
+  intent by applying its startup options once, selecting the corresponding
+  temperature at level `57`, and using Restore as the new startup policy without
+  erasing commissioning. Startup first attempts stock Off, then reconciles saved
+  intent and the lamp's Matter startup policy. Do not replace this with unconditional
   Off on every restart. Corrupt storage must report a fault rather than silently
   become a successful restore.
 - Avoid unnecessary flash writes. Keep pairing codes and Wi-Fi credentials out
@@ -150,28 +184,31 @@ PCA register semantics come from the
 [NXP datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf);
 the selected commands come from the stock firmware evidence above.
 
-### Build, console, and C3 adaptation
+### Build and console
 
 Continue with Rust, Cargo, the current portable core, and the pinned compatible
-Matter stack. Port the chip-specific adapters and build configuration to C3;
-do not replace the project with C++/ESP-IDF/ESP-Matter. Keep the real application
-and explicitly simulated bench image distinct. Bench simulation is not a
-prerequisite reflash or a substitute for real-I/O testing.
+Matter stack with C3 chip-specific adapters and build configuration. Keep the
+real application and explicitly simulated bench image distinct. Bench simulation
+is not a prerequisite reflash or a substitute for real-I/O testing.
 
-The real C3 image must include normal Matter control and the existing USB
-status, register-readback, On/Off, verification, pairing, and recovery interface.
+The real C3 image must include normal Matter control and USB status,
+register-readback, power, level, temperature, verification, pairing, and recovery.
 Keep `scripts/device.py` and its `KR OK`/`KR ERR` protocol. The console must not
 block startup waiting for a host. No calibration wizard, new JSON command family,
 network console, cloud service, OTA system, or extra installation firmware is
-required for this fixed installation.
+required for this installation.
 
-Before declaring the C3 ready to flash:
+The bench image uses the same runtime, Matter, console, and network paths with
+simulated output. Its status and register responses must identify simulation;
+they cannot establish successful physical PCA communication or output.
 
-1. Select C3 throughout Cargo features, target configuration, runtime/peripheral
+Before flashing:
+
+1. Verify C3 throughout Cargo features, target configuration, runtime/peripheral
    setup, board identity, image generation, and the flash helper. Use GPIO4/5 and
-   open-drain GPIO6; remove C6 antenna GPIO3/14 writes and reserve USB GPIO18/19.
+   open-drain GPIO6; reserve USB GPIO18/19 and leave antenna routing to hardware.
 2. Preserve compatible dependency pins where possible and document changes
-   required for a working C3 port. Build both actual C3 images and retain the
+   required for the C3. Build both actual C3 images and retain the
    existing host/control tests.
 3. Detect chip and flash capacity before writing. Reject the wrong chip or an
    image/partition layout that cannot fit. Start from a 4 MiB budget, without
@@ -180,15 +217,18 @@ Before declaring the C3 ready to flash:
 4. Document and exercise native USB flashing, console access, and BOOT/RESET
    recovery under the installed assembly's power-isolation rule.
 
-[Development](development.md) identifies the current C6-only files and commands.
-This specification records the required port, not a completed implementation.
+[Development](development.md) owns build and console commands;
+[bench bring-up](bench-bring-up.md) owns the initial powered sequence.
 
 ## Acceptance
 
 Run `sh scripts/check.sh` and `sh scripts/check-firmware.sh` after changes. Keep
-behavioral coverage of preset frames, inactive-Off/toggle/idempotent transitions,
-readback mismatch and bus failure, storage errors, startup policy, and recovery.
-The C3 port additionally needs verified pin modes and target/flash-fit checks.
+behavioral coverage of the 1%/10% stock limits, brightness and temperature
+mapping, the level-57 regression points, single-light power/toggle/idempotent
+transitions, persistence migration, readback mismatch and bus failure, storage
+errors, startup policy, and recovery. Exercise standard Matter commands and
+reporting for the advertised level and temperature features.
+Verify pin modes and target/flash-fit checks for the C3.
 
 The physical acceptance sequence is:
 
@@ -196,13 +236,17 @@ The physical acceptance sequence is:
    safe USB connection, flashing, console access, and rail behavior during boot
    and radio activity. Verify PCA `0x15` and stock register readback. Check reset
    reasons for brownouts or a reset loop. These results cannot prove light output.
-2. **LEDs connected after power is removed:** observe Off, both fixed presets,
+2. **LEDs connected after power is removed:** observe Off, low and high brightness,
+   temperature endpoints and intermediate values, the level-57 reference points,
    bank identity, cold power-up, controller reset, and saved-state restoration.
-   Record any flash, incorrect bank, unexpected output, or loss of control.
+   Record quantization, flashes, incorrect banks, unexpected output, or loss of
+   control. Confirm Home 100% respects the stock nominal 10% ceiling.
 3. **Completed housing:** pair with Apple Home using the actual antenna hardware,
-   verify both endpoints and mutual exclusion, then interrupt Wi-Fi briefly and
-   verify automatic recovery with intent retained. The development host must
-   remain reachable independently of the lamp's Wi-Fi.
+   verify one light tile with power, brightness, and temperature per lamp. Group
+   two separately commissioned lamps in Home and verify both follow those
+   controls. Interrupt one lamp's Wi-Fi briefly, confirm the other still works,
+   and verify automatic recovery with intent retained. The development host
+   must remain reachable independently of the lamp's Wi-Fi.
 
 Record observations, failures, and pending checks in
 [the validation record](validation-record.md). Do not require destructive fault

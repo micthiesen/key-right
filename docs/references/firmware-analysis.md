@@ -248,13 +248,11 @@ measurements do not change what this offline analysis itself established.
   The recorded earlier `303`/brightness `3` logical state remains separate
   evidence. The stock LAN API cannot establish PCA waveforms or wiring.
 
-## Current assembly path and abandoned experiment
+## Current assembly path
 
 The installed C3 path removes only the Realtek module and retains the PCA9635.
 GPIO4/5/6 route SDA/SCL/active-low OE using the measured map in
-[hardware.md](../hardware.md); PCA pins 6/10 stay in place. The XIAO C6/buck plan
-has been superseded, though the application has not yet been ported. Wiring is
-complete with LEDs disconnected. Startup/fault behavior has not been tested.
-
-An earlier draft used ESP LEDC through a TXU0102 and lifted PCA pins 6/10. That
-direct-PWM design is abandoned; none of its BOM or isolation guidance is current.
+[hardware.md](../hardware.md); PCA pins 6/10 stay in place. Wiring is complete
+with LEDs disconnected. Startup/fault behavior has not been tested. The current
+single-light brightness/temperature contract is in [the spec](../spec.md);
+the analysis above retains its original stock-firmware evidence and date.

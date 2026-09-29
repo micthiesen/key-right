@@ -1,4 +1,6 @@
-use key_right_core::{Command, Controller, LightOutput, LightState, Preset};
+use key_right_core::{
+    ColorTemperature, Command, Controller, Level, LightOutput, LightState, Preset,
+};
 
 #[derive(Default)]
 struct Output {
@@ -30,14 +32,17 @@ fn first_boot_requests_off_without_claiming_known_output() {
     let mut output = Output::default();
     assert_eq!(controller.reconcile(&mut output), Ok(true));
     assert_eq!(controller.applied(), Some(LightState::default()));
-    assert_eq!(output.last_attempt.unwrap().brightness_percent(), 0);
+    assert!(!output.last_attempt.unwrap().on);
+    assert_eq!(controller.intended().level, Level::DEFAULT);
+    assert_eq!(controller.intended().temperature, ColorTemperature::DEFAULT);
 }
 
 #[test]
 fn restored_intent_is_reapplied_on_boot() {
     let restored = LightState {
         on: true,
-        preset: Preset::Two,
+        level: Level::MAX,
+        temperature: Preset::Two.temperature(),
     };
     let mut controller = Controller::new(Some(restored));
     assert_eq!(controller.intended(), restored);
@@ -46,41 +51,58 @@ fn restored_intent_is_reapplied_on_boot() {
     let mut output = Output::default();
     controller.reconcile(&mut output).unwrap();
     assert_eq!(output.last_attempt, Some(restored));
-    assert_eq!(controller.applied().unwrap().brightness_percent(), 3);
+    assert_eq!(controller.applied().unwrap().level, Level::MAX);
 }
 
 #[test]
-fn preset_survives_off_and_on_without_changing_fixed_brightness() {
+fn level_and_temperature_survive_off_and_on() {
     let mut controller = Controller::new(None);
     assert!(controller.command(Command::SelectPreset(Preset::Two)));
     assert!(!controller.intended().on);
     assert!(controller.command(Command::SetPower(true)));
-    assert_eq!(controller.intended().brightness_percent(), 3);
+    assert!(controller.command(Command::SetLevel(Level::MAX)));
     assert!(controller.command(Command::SetPower(false)));
-    assert_eq!(controller.intended().brightness_percent(), 0);
+    assert!(!controller.intended().on);
     assert!(controller.command(Command::SetPower(true)));
-    assert_eq!(controller.intended().preset, Preset::Two);
-    assert_eq!(controller.intended().brightness_percent(), 3);
+    assert_eq!(controller.intended().temperature, Preset::Two.temperature());
+    assert_eq!(controller.intended().level, Level::MAX);
 }
 
 #[test]
-fn every_brightness_write_preserves_power_preset_and_output() {
+fn level_and_temperature_writes_preserve_power_and_apply_new_settings() {
     for on in [false, true] {
-        for preset in [Preset::One, Preset::Two] {
-            let state = LightState { on, preset };
-            let mut controller = Controller::new(Some(state));
-            let mut output = Output::default();
-            controller.reconcile(&mut output).unwrap();
-
-            for value in 0..=u8::MAX {
-                assert!(!controller.command(Command::SetBrightness(value)));
-                assert_eq!(controller.intended(), state);
-                assert_eq!(controller.reconcile(&mut output), Ok(false));
-                assert_eq!(controller.applied(), Some(state));
-            }
-            assert_eq!(output.writes, 1);
-        }
+        let mut controller = Controller::new(Some(LightState {
+            on,
+            ..LightState::default()
+        }));
+        let mut output = Output::default();
+        controller.reconcile(&mut output).unwrap();
+        assert!(controller.command(Command::SetLevel(Level::MIN)));
+        assert!(controller.command(Command::SetTemperature(ColorTemperature::MIN)));
+        assert_eq!(controller.intended().on, on);
+        assert_eq!(controller.reconcile(&mut output), Ok(true));
+        assert_eq!(controller.applied(), Some(controller.intended()));
+        assert_eq!(output.writes, 2);
     }
+}
+
+#[test]
+fn validated_types_reject_out_of_range_values() {
+    for value in 0..=u8::MAX {
+        assert_eq!(
+            Level::new(value).map(Level::get),
+            (1..=254).contains(&value).then_some(value)
+        );
+    }
+    for value in 0..=u16::MAX {
+        assert_eq!(
+            ColorTemperature::new(value).map(ColorTemperature::get),
+            (143..=344).contains(&value).then_some(value)
+        );
+    }
+    assert_eq!(Level::MIN.stock_brightness_ratio(), (253, 253));
+    assert_eq!(Level::MAX.stock_brightness_ratio(), (2530, 253));
+    assert_eq!(Level::DEFAULT.stock_brightness_ratio(), (757, 253));
 }
 
 #[test]
@@ -90,6 +112,8 @@ fn repeated_commands_do_not_request_persistence_or_output_writes() {
     controller.reconcile(&mut output).unwrap();
     assert!(!controller.command(Command::SetPower(false)));
     assert!(!controller.command(Command::SelectPreset(Preset::One)));
+    assert!(!controller.command(Command::SetLevel(Level::DEFAULT)));
+    assert!(!controller.command(Command::SetTemperature(ColorTemperature::DEFAULT)));
     assert_eq!(controller.reconcile(&mut output), Ok(false));
     assert_eq!(output.writes, 1);
 }
@@ -119,7 +143,7 @@ fn partial_write_failure_invalidates_acknowledgement_and_can_retry() {
     assert_eq!(controller.reconcile(&mut output), Err("I2C write failed"));
     assert_eq!(controller.applied(), None);
     assert!(controller.intended().on);
-    assert_eq!(controller.intended().preset, Preset::Two);
+    assert_eq!(controller.intended().temperature, Preset::Two.temperature());
 
     output.fail = false;
     assert_eq!(controller.reconcile(&mut output), Ok(true));

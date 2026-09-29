@@ -1,9 +1,12 @@
 use std::{convert::Infallible, env, process::ExitCode};
 
-use key_right_core::{Command, Controller, LightOutput, LightState, Preset};
+use key_right_core::{
+    ColorTemperature, Command, Controller, Level, LightOutput, LightState, Preset,
+};
 
-const USAGE: &str = "Usage: key-right simulate [on|off|preset-1|preset-2|brightness=N]...\n\
-Runs one in-memory session, starting off. N is 0..100 and is ignored.\n\
+const USAGE: &str = "Usage: key-right simulate [on|off|level=N|mired=N|preset-1|preset-2]...\n\
+Runs one in-memory session, starting off at level57/mired303.\n\
+Level is 1..254, mapped to nominal stock brightness 1..10%; mired is 143..344.\n\
 This simulator performs no device or network I/O.\n\
 Use scripts/device.py for the native USB console.";
 
@@ -28,13 +31,20 @@ fn parse_command(value: &str) -> Result<Command, String> {
         "preset-1" => Ok(Command::SelectPreset(Preset::One)),
         "preset-2" => Ok(Command::SelectPreset(Preset::Two)),
         _ => {
-            if let Some(number) = value.strip_prefix("brightness=") {
-                let brightness = number
+            if let Some(number) = value.strip_prefix("level=") {
+                let level = number
                     .parse::<u8>()
                     .ok()
-                    .filter(|value| *value <= 100)
-                    .ok_or_else(|| "brightness must be an integer from 0 to 100".to_owned())?;
-                Ok(Command::SetBrightness(brightness))
+                    .and_then(Level::new)
+                    .ok_or_else(|| "level must be an integer from 1 to 254".to_owned())?;
+                Ok(Command::SetLevel(level))
+            } else if let Some(number) = value.strip_prefix("mired=") {
+                let temperature = number
+                    .parse::<u16>()
+                    .ok()
+                    .and_then(ColorTemperature::new)
+                    .ok_or_else(|| "mired must be an integer from 143 to 344".to_owned())?;
+                Ok(Command::SetTemperature(temperature))
             } else {
                 Err(format!("unknown command: {value}"))
             }
@@ -47,13 +57,20 @@ fn report(controller: &Controller, output: &SimulatedOutput) {
     let applied = controller
         .applied()
         .expect("simulation acknowledges every output application");
+    let (brightness_numerator, brightness_denominator) = applied.level.stock_brightness_ratio();
+    let frame = key_right_core::pca9635::stock_frame(applied);
     println!(
-        "mode=simulation intended_on={} intended_preset={:?} applied_on={} applied_preset={:?} nominal_brightness_percent={} output_writes={}",
+        "mode=simulation intended_on={} intended_level={} intended_mired={} applied_on={} applied_level={} applied_mired={} selected_stock_brightness_percent={}/{} raw_warm={} raw_cool={} output_writes={}",
         intended.on,
-        intended.preset,
+        intended.level.get(),
+        intended.temperature.get(),
         applied.on,
-        applied.preset,
-        applied.brightness_percent(),
+        applied.level.get(),
+        applied.temperature.get(),
+        brightness_numerator,
+        brightness_denominator,
+        frame[0],
+        frame[4],
         output.writes,
     );
 }

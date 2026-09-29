@@ -41,9 +41,8 @@ I²C exchange, or optical test of the completed assembly has been reported.
 
 ## Bench session pending, LEDs disconnected
 
-The current MCU application and flash helper target the C6. Complete and verify
-the C3 port before using them with this board; see
-[development.md](development.md). With lamp wires attached, USB must block
+Follow [bench bring-up](bench-bring-up.md) and record the software gate results
+before flashing the C3. With lamp wires attached, USB must block
 VBUS/5 V while retaining data and ground. Ordinary powered USB requires
 disconnecting all five lamp wires first, even when lamp power is off.
 
@@ -57,6 +56,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | Date, operator, stock-board revision | Pending |
 | C3 chip identity and detected flash ID/capacity | Pending; plan assumes 4 MiB and no PSRAM |
 | C3 firmware commit, build target, image/partition fit | Pending |
+| Read-only serial inspection and flash-helper preflight | Pending |
 | Bench-PSU connection/polarity, voltage setting, current limit | Pending; reported original input is 13 V |
 | Power/USB isolation arrangement used | Pending |
 | First power-up, current draw, 3.3 V rail under load | Pending |
@@ -76,21 +76,26 @@ each check. Tests with disconnected LEDs cannot fill these rows.
 | --- | --- |
 | Firmware commit and LED reconnection date | Pending |
 | Off after application initialization | Pending |
-| 3300 K at nominal 3%, warm/cool raw PCA `6/2` | Pending |
-| 5000 K at nominal 3%, warm/cool raw PCA `3/6` | Pending |
+| Home low/high brightness, stock nominal 1%/10% limits | Pending |
+| Temperature minimum/maximum, 143/344 mired | Pending |
+| Initial level 57 and 303 mired, warm/cool raw PCA `6/2` | Pending |
+| Level 57 and 200 mired, warm/cool raw PCA `3/6` | Pending |
+| Intermediate brightness/temperature response and low-level quantization | Pending |
 | LED0 warm / LED4 cool physical behavior | Pending |
 | OE HIGH with `MODE2=0x14` and the actual external driver stage | Pending |
 | Cold power-up, MCU reset, and any startup flash | Pending |
 | Power-cycle persistence and intended/applied/output state agreement | Pending |
 | Installed antenna arrangement and closed-housing BLE/Apple Home pairing | Pending |
-| Closed-housing control of both presets and Off | Pending |
+| One Home light tile with power, brightness, and temperature per lamp | Pending |
+| Two separately paired lamps grouped in Home, shared brightness/temperature control | Pending; no simultaneous-output guarantee |
+| One grouped lamp offline while the other remains controllable | Pending |
 | Short Wi-Fi/AP interruption and automatic recovery preserving intent | Pending |
 | USB removed, ordinary lamp-powered operation | Pending |
 
 ## Interpretation
 
 [Stock-firmware emulation](references/firmware-analysis.md) establishes address,
-channel, configuration, and preset command evidence. It does not establish
+channel, configuration, and reference command evidence. It does not establish
 measured brightness, color temperature, flicker, LED current, temperature,
 startup behavior, or radio/network reliability on this assembly. There are no
 connected voltage, current, or optical sensors; fixed values and register

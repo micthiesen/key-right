@@ -5,7 +5,8 @@ use embedded_io_async::Read as _;
 use esp_hal::usb::usb_serial_jtag::UsbSerialJtagRx;
 use esp_hal::Async;
 use heapless::String;
-use key_right_core::Preset;
+use key_right_core::{ColorTemperature, Level, LightState, Preset};
+use rs_matter_embassy::matter::error::{Error, ErrorCode};
 use rs_matter_embassy::matter::persist::KvBlobStoreAccess;
 
 pub async fn run<K: KvBlobStoreAccess, H: Hardware>(
@@ -91,21 +92,44 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             let s = runtime.snapshot();
             let (attempts, timeouts, restarts, connected) = crate::network::metrics();
             let (rssi, local_ready, ipv4_ready, ip_timeouts) = crate::network::local_metrics();
-            let _=write!(out,"KR OK mode=hardware firmware={} identity=KR-{} uptime_ms={} reset={:?} intended_on={} intended_preset={} acknowledged={:?} fault={:?} output_failures={} storage_failures={} recoveries={} wifi_connected={} rssi_dbm={:?} local_ip_ready={} ipv4_ready={} wifi_attempts={} wifi_timeouts={} ip_timeouts={} wifi_restarts={} usb_dropped={} physical_output=unmeasured",
-                env!("CARGO_PKG_VERSION"),esp_hal::efuse::base_mac_address(),embassy_time::Instant::now().as_millis(),esp_hal::system::reset_reason(),
-                s.intended.on,if s.intended.preset==Preset::One {1}else{2},s.applied,s.fault,s.output_failures,s.storage_failures,s.recoveries,
+            let _=write!(out,"KR OK mode={} firmware={} chip=esp32c3 identity=KR-{} uptime_ms={} reset={:?} intended_on={} intended_level={} intended_mired={} stock_range_percent=1..10 acknowledged={:?} fault={:?} output_failures={} storage_failures={} recoveries={} wifi_connected={} rssi_dbm={:?} local_ip_ready={} ipv4_ready={} wifi_attempts={} wifi_timeouts={} ip_timeouts={} wifi_restarts={} usb_dropped={} physical_output=unmeasured",
+                H::MODE,env!("CARGO_PKG_VERSION"),esp_hal::efuse::base_mac_address(),embassy_time::Instant::now().as_millis(),esp_hal::system::reset_reason(),
+                s.intended.on,s.intended.level.get(),s.intended.temperature.get(),s.applied,s.fault,s.output_failures,s.storage_failures,s.recoveries,
                 connected,rssi,local_ready,ipv4_ready,attempts,timeouts,ip_timeouts,restarts,crate::output::dropped());
             return;
         }
         ("off", [None, None, None]) => runtime.off(),
-        ("on", [Some(p @ ("1" | "2")), None, None]) => {
-            runtime.set_endpoint(if p == "1" { Preset::One } else { Preset::Two }, true)
-        }
+        ("on", [None, None, None]) => runtime.set_power(true),
+        ("on", [Some(p @ ("1" | "2")), None, None]) => runtime.request(LightState {
+            on: true,
+            temperature: if p == "1" {
+                Preset::One.temperature()
+            } else {
+                Preset::Two.temperature()
+            },
+            ..LightState::default()
+        }),
+        ("level", [Some(value), None, None]) => value
+            .parse::<u8>()
+            .ok()
+            .and_then(Level::new)
+            .ok_or_else(|| Error::from(ErrorCode::ConstraintError))
+            .and_then(|level| runtime.set_level(level, false)),
+        ("temperature", [Some(value), None, None]) => value
+            .parse::<u16>()
+            .ok()
+            .and_then(ColorTemperature::new)
+            .ok_or_else(|| Error::from(ErrorCode::ConstraintError))
+            .and_then(|temperature| runtime.set_temperature(temperature)),
         ("verify", [None, None, None]) => runtime.verify(),
         ("registers" | "outputs", [None, None, None]) => {
             match runtime.registers() {
                 Ok(registers) => {
-                    let _ = out.push_str("KR OK backend=pca9635 address=0x15 registers=");
+                    let _ = write!(
+                        out,
+                        "KR OK mode={} backend=pca9635 address=0x15 registers=",
+                        H::MODE
+                    );
                     for byte in registers {
                         let _ = write!(out, "{byte:02x}");
                     }
@@ -117,8 +141,16 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             }
             return;
         }
-        ("on1", [None, None, None]) => runtime.set_endpoint(Preset::One, true),
-        ("on2", [None, None, None]) => runtime.set_endpoint(Preset::Two, true),
+        ("on1", [None, None, None]) => runtime.request(LightState {
+            on: true,
+            temperature: Preset::One.temperature(),
+            ..LightState::default()
+        }),
+        ("on2", [None, None, None]) => runtime.request(LightState {
+            on: true,
+            temperature: Preset::Two.temperature(),
+            ..LightState::default()
+        }),
         ("commissioning", [Some("code"), None, None]) => {
             if let Err(e) = open_commissioning() {
                 let _ = write!(out, "KR ERR commissioning_window_{:?}", e.code());
@@ -128,7 +160,7 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             return;
         }
         _ => {
-            let _=out.push_str("KR ERR commands=status|off|on_1_or_2|verify|registers|commissioning_code|reboot|test_watchdog");
+            let _=out.push_str("KR ERR commands=status|off|on|level_1..254|temperature_143..344|on_1_or_2|verify|registers|commissioning_code|reboot|test_watchdog");
             return;
         }
     };
