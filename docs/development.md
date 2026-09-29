@@ -11,7 +11,11 @@ considers bench probing complete; LEDs reconnect during unpowered reassembly.
 Firmware 0.1.3 passed real Wi-Fi reconnection, two transport recreations in one
 boot, watchdog recovery of saved On and reboot recovery of saved Off.
 After delayed Home resubscription, the final target/Off card check also passed.
-The first board is ready for unpowered reassembly, with saved Off.
+Michael subsequently reported successful overall operation of the first lamp.
+The second board passed PCA checks and saved-Off reboot on the same image,
+then joined Home with both fabrics persisted. Its final control/Off check passed
+after restarting Home cleared an idle spinner. It is saved Off and ready for
+unpowered assembly.
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 
@@ -216,8 +220,8 @@ port command checks the connected device before flashing the real image.
 
 After flashing under the power rule above, inspect USB `status` and `verify`
 before changing output, so saved-state restoration remains observable. Issue
-and verify Off before unpowered reassembly. Preserve the first board's Home
-fabrics. For an uncommissioned second board, request its own pairing code with:
+and verify Off before unpowered reassembly. Preserve each board's existing Home
+fabrics. Only for a new, uncommissioned board, request its own pairing code with:
 
 ```sh
 python3 scripts/device.py --port PORT commissioning code
@@ -271,9 +275,8 @@ the driver scans for the requested SSID and uses its strongest result as a
 starting-channel hint, with all-channel association and no pinned BSSID. Empty
 or failed discovery falls back to all-channel association. Discovery and joining
 share the existing 30-second deadline; expiry recreates the radio controller.
-The first board subsequently completed Home commissioning with both fabrics;
-the second board still needs its own commissioning. The channel is only a
-scan-order hint
+Both boards subsequently completed Home commissioning with their own fabrics
+and credentials. The channel is only a scan-order hint
 per the [Espressif station configuration](https://docs.espressif.com/projects/esp-idf/en/v5.5/esp32c3/api-guides/wifi.html).
 
 Useful console commands:

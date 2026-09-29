@@ -17,8 +17,10 @@ The firmware uses the C3's native USB Serial/JTAG peripheral.
 On **2026-09-28**, Michael completed the wiring and powered the assembly from a
 13 V bench supply, measuring 3.345 V at ESP `3.3`/`G`. USB identified an ESP32-C3
 revision v0.4 with 4 MiB flash. The original image was backed up and real
-firmware flashed. The LED panels remain **disconnected**; bench results and
-outstanding checks are in [the validation record](validation-record.md).
+firmware flashed. The panels were disconnected for bench work. Michael now
+reports successful overall operation of the first lamp; the second board has
+passed register checks and joined Home, with loaded operation still pending.
+Per-board results are in [the validation record](validation-record.md).
 
 Retain the PCA9635 U3, stock LED power/current-limiting circuitry, LED panels,
 housing, and original 13 V / 4 A supply. No PCA pin is lifted. The rocker has
@@ -33,7 +35,7 @@ pad.
 **Corrected U4 signal map, 2026-09-28:** Michael identified the error at the
 Key Light's U4 pads, confirmed the ESP connections are correct, and supplied the
 map below. He has confirmed the first board's rework, signal-pin continuity,
-and absence of shorts; the second board remains in progress. The
+and absence of shorts. Both boards have now passed powered PCA writes/readback. The
 [validation record](validation-record.md) owns per-board status and powered
 results. Remove bench power and USB for rewiring, then check each complete
 signal path before powered testing resumes.

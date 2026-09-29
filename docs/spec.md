@@ -20,9 +20,13 @@ Michael considers bench probing complete. Firmware 0.1.3 passed real Wi-Fi
 reconnection, repeated full transport recreation, watchdog recovery of saved
 On, and reboot recovery of saved Off. Home's card temporarily showed stale state
 after the resets; once its subscription returned, the final target/Off check
-passed. The first board is ready for unpowered reassembly. Loaded output/startup
-and the second board remain unverified. The [physical validation record](validation-record.md) owns
-per-image results, including the rejected intermediate builds.
+passed. Michael subsequently reported successful overall operation of the first
+lamp. The second board runs the same final image and has passed real PCA checks,
+saved-Off reboot, Home commissioning and the final Home control/Off check. Its
+idle spinner cleared after restarting Home. It is ready for unpowered assembly.
+Loaded startup, detailed optical behavior and two-lamp grouping remain unverified.
+The [physical validation record](validation-record.md) owns per-image results,
+including the rejected intermediate builds.
 
 The firmware target is `esp32c3`, using `riscv32imc-unknown-none-elf`. Software
 validation and physical acceptance are separate; passing build gates does not

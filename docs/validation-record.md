@@ -5,15 +5,14 @@ This record covers Michael's original full-size Elgato Key Light and its wired
 credentials out of this file. Distinguish reported measurements, firmware
 evidence, controller acknowledgements, and observed light output.
 
-**Current Home status:** Michael confirmed successful addition of the first
-board on 2026-09-28. Both Home fabrics completed commissioning and were persisted.
-Home power, brightness and temperature commands passed unloaded bench checks,
-including control after one cold power cycle and measured Off at all four
-connectors. Michael considers probing complete. Firmware 0.1.3 passed the
-controlled recovery checks below. After Home re-established its subscription,
-Michael confirmed that 45% held on the main card and Off stayed Off without a
-spinner. The board is ready for unpowered reassembly with firmware 0.1.3 and
-saved Off. Retain both fabrics. LED-connected acceptance remains pending.
+**Current Home status:** both boards run firmware 0.1.3 and joined Home on
+2026-09-28, each with two persisted Home fabrics. Preserve all of them.
+The first board passed the physical bench checks and controlled recovery tests
+below; Michael now reports successful overall operation of that lamp. The second
+board passed PCA register checks, saved-Off reboot and Home control checks.
+Michael confirmed Off held without a spinner after refreshing Home. The second
+board is saved Off and ready for unpowered assembly. Probing is complete.
+Detailed loaded results and remaining limits are recorded per board below.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
 the error at the Key Light's U4 pads and confirmed the ESP end is correct. On
@@ -62,7 +61,7 @@ connected.** The initially reported signal map was later found incorrect;
 buck converter or added pull-ups. At that point, powered operation, flashing,
 USB, I²C, and optical tests of the completed assembly were still pending.
 
-## Bench session in progress, 2026-09-28, LEDs disconnected
+## First-board bench session, 2026-09-28, LEDs disconnected
 
 Follow [bench bring-up](bench-bring-up.md) and record the software gate results
 before flashing the C3. With lamp wires attached, USB must block
@@ -77,7 +76,7 @@ must be recorded as the chosen bench setting, not inferred from the adapter's
 | Check or session detail | Result |
 | --- | --- |
 | Date, operator, stock-board revision | 2026-09-28; Michael operating the bench, agent inspecting macOS/serial; stock-board revision not supplied |
-| U4 signal-wiring correction | Michael reports OE = top-row pad 5 from left (1-based), SCL = rightmost, SDA = second from right; ESP ends correct. First board rewired, signal-pin continuity and shorts checked by Michael. Powered PCA readback now passes on this board. Second board rework completion not yet reported |
+| U4 signal-wiring correction | Michael reports OE = top-row pad 5 from left (1-based), SCL = rightmost, SDA = second from right; ESP ends correct. First board rewired, signal-pin continuity and shorts checked by Michael. Both boards subsequently passed powered PCA writes/readback; second-board results are recorded separately below |
 | USB after first-board rework | Initially no device in serial nodes, `ioreg`, or `system_profiler SPUSBHostDataType`, despite BOOT/RESET and reported red power LED. USB watcher then captured connection activity; Michael identified a position-sensitive cable and adjusted it. `/dev/cu.usbmodem101` now answers as the original `KR-88:56:a6:39:ec:f4`. Initial status at 346,199 ms uptime reports `ChipPowerOn`, acknowledged Off, and no output/storage fault. No reflash was needed. Michael reports power is good; no new numerical rail reading or PSU CV/CC indication supplied |
 | C3 chip identity and detected flash ID/capacity | ESP32-C3 revision v0.4, 40 MHz crystal, 4 MiB flash detected by espflash; raw flash ID was not printed |
 | C3 firmware commit, build target, image/partition fit | Current normal real `hardware-light` image is `b43e6bd`, firmware 0.1.3 / Matter software version 4, `riscv32imc-unknown-none-elf`; 1,930,256 / 4,063,232 app-partition bytes, linked stack 41,200 bytes. Both software gates and flash preflights passed. Earlier images and rejected qualification builds are recorded below |
@@ -540,19 +539,56 @@ physical LED measurements. Private receipt: `local/board2-bench-20260929.log`.
 
 The board's own stable QR was read through the explicit USB command and rendered
 locally as terminal blocks and a private PNG. Discovery name is `Key Right F414`.
-No first-board credentials or NVS were copied. Home commissioning and the final
-Home control check remain pending; a continuous private serial capture is active
-in `local/board2-home-controls-20260929.log`.
+No first-board credentials or NVS were copied. Michael confirmed successful
+addition to Home. Operational fabrics 1 and 2 were added at 06:17:23 and
+06:18:01 UTC; commissioning-complete receipts at 06:17:58 and 06:18:03 explicitly
+confirmed that fabric and network settings were persisted. Two Home controller
+subscriptions were primed at 06:17:59 and 06:18:07. Wi-Fi and IPv4/IPv6 were ready
+with one connection attempt and no timeout or transport restart. At 508,942 ms
+uptime, state remained Off/57/303 with no output/storage fault. Optional attribute
+and cluster requests received UnsupportedAttribute/UnsupportedCluster responses;
+these did not prevent successful commissioning. Private receipt:
+`local/board2-home-controls-20260929.log`.
 
-## LED-connected acceptance pending
+### Second-board final Home check
 
-Michael reports the LED panels cannot be connected until the lamp is put back
-together. Keep them disconnected for bench work; the four two-pin LED connectors
-are available for probing. Record unloaded connector measurements separately
-from physical light results. Reconnect during reassembly with power removed,
-only after the preceding bench work supports proceeding. Record the firmware
-commit and actual observations for each check. Tests with disconnected LEDs
-cannot fill these rows.
+Home's controls reached the real driver: level 115/254 (45%) was selected,
+followed by 144 mired. Settled warm/cool PWM `0/10` and `verify` passed; Off
+verified zero PWM. Michael reported no control-value jumping but an idle spinner.
+Further state changes in the capture ended On at level 90/254 (about 35%) and
+144 mired. That earlier interval cannot establish an unattended Off pass.
+
+At 06:19:51 UTC, one controller rejected its initial subscription with
+`InvalidSubscription`; the SDK removed it while the second subscription remained.
+There was no Wi-Fi timeout, reconnect, transport restart, MCU reset or
+output/storage fault during these checks. The log does not isolate the spinner's
+cause. After fully closing and reopening Home, Michael selected Off at 06:22:13.
+Zero PWM and `verify` passed, with level 90 and 144 mired remembered. Michael
+confirmed that Off held and the spinner cleared during the requested idle check.
+The final read-only snapshot at 770,989 ms uptime still showed Off/90/144,
+acknowledged Off, connected Wi-Fi and IPv4/IPv6, and zero output/storage failures
+or transport restarts. USB subsequently disconnected and the monitor exited.
+
+This passes the second board's final Home check and releases it for unpowered
+reassembly. Both boards run the unchanged real firmware `b43e6bd` / 0.1.3 with
+their own persisted Home fabrics. The second board is left saved Off. No further
+probing or reflash is required. Loaded operation, grouping and long-term radio
+behavior remain separate observations; the first board's deliberate network and
+watchdog fault tests were not repeated on the second board.
+
+## LED-connected observations and remaining checks
+
+After the first board was released for reassembly, Michael reported that the
+first lamp works great. Record this as successful overall operation, without
+inferring individual startup-flash, optical-calibration, radio-recovery or
+grouping checks from that report. Its installed image is firmware 0.1.3,
+commit `b43e6bd`. The second lamp's loaded operation remains pending.
+
+The panels cannot be connected until reassembly. Reconnect with power removed,
+after the bench results support proceeding. No further routine probing is owed.
+Record unloaded connector measurements separately from physical light results,
+including the firmware commit and actual observations. Tests with disconnected
+LEDs cannot establish the remaining loaded checks below.
 
 | Check | Observation |
 | --- | --- |

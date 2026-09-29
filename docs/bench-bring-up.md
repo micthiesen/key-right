@@ -9,11 +9,12 @@ Do not repeat those measurements without new fault evidence.
 Firmware 0.1.3 passed Wi-Fi reconnection, repeated full transport recreation,
 watchdog restoration of saved On and reboot restoration of saved Off. After
 Home re-established its subscription, the final target/Off card check passed.
-The first board is ready for unpowered reassembly with saved Off. The second
-board proceeds through chip and capacity preflight, flashing, commissioning
-and live operation without another routine meter-probing sequence. Record each
-board's actual image and results in [the validation record](validation-record.md).
-Passing the first board does not establish the second board's behavior.
+Michael now reports successful overall operation of the first lamp. The second
+board separately passed chip/capacity preflight, flashing, PCA register checks,
+saved-Off reboot, Home commissioning and its final Home control/Off check. It is
+saved Off and ready for unpowered assembly. No further routine probing is owed.
+Record each board's image and results in [the validation record](validation-record.md).
+Passing either board does not establish the other's untested behavior.
 
 ## 1. Power and preparation
 

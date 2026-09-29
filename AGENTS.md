@@ -41,9 +41,14 @@ reported; powered PCA readback subsequently passed on the first rewired board.
 Michael measured blue/OE to black/GND at 3.34 V Off and 0.01 V On. These steady
 levels pass. First-board unloaded connector Off/On/Off, Home power/brightness/
 temperature controls, and one cold power-cycle restoration also passed.
-Loaded startup transitions, physical LED output, and the second board remain
-unverified; do not turn those limits into requests to repeat completed probing.
-The first board reports 4 MiB flash; no PSRAM is required. Detect each device's
+Michael subsequently reported successful overall operation of the first lamp.
+The second board has passed real PCA checks, saved-Off reboot, Home
+commissioning with its own fabrics and credentials, and the final control/Off
+check after a Home app restart cleared an idle spinner. It is ready for
+unpowered assembly with saved Off. Detailed loaded startup and second-lamp
+operation remain unverified; do not turn those limits into
+requests to repeat completed probing.
+Both installed boards report 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 
 The C3 takes power directly from J6's measured 3.37 V rail at its `3.3` pad.
@@ -54,7 +59,7 @@ intact. Ordinary powered USB requires disconnecting all five lamp wires first;
 unplugging the lamp adapter alone is insufficient.
 On 2026-09-28 the wired assembly powered from the 13 V bench supply, the user
 measured 3.345 V at the ESP, USB identified the C3, and the real firmware flashed
-after an original-flash backup. LEDs remain disconnected. Consult
+after an original-flash backup. LEDs were disconnected for bench work. Consult
 `docs/validation-record.md` for bench results and remaining acceptance checks.
 Do not claim off during cold start, reset, or brownout until the actual light is
 observed; there is no independent output cutoff.
@@ -82,10 +87,11 @@ Known storage/output faults remain errors. WithOnOff at minimum level 1 is Off;
 ordinary level commands cannot change an Off target back to On during its fade.
 Keep intended, acknowledged, and measured physical output distinct.
 Network recovery must preserve intent and cannot be claimed from simulated tests.
-The first board (`KR-88:56:a6:39:ec:f4`) successfully joined Apple Home on
-2026-09-28 with two persisted Home fabrics. Preserve both; temporary test
-controllers were already removed. Routine bench checks must not unpair this
-commissioned board or erase its NVS. See `docs/validation-record.md` for
+Both boards (`KR-88:56:a6:39:ec:f4` and `KR-88:56:a6:39:f4:14`) successfully
+joined Apple Home on 2026-09-28, each with its own two persisted Home fabrics.
+Preserve all of them; temporary test controllers were already removed. Routine
+bench checks must not unpair either board, copy one board's populated NVS to the
+other, or erase NVS. See `docs/validation-record.md` for
 successful commissioning evidence and the remaining physical checks.
 
 Recovery uses local radio/IP/transmit evidence, not Internet reachability or

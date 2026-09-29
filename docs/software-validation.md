@@ -187,15 +187,24 @@ rejected intermediate images. Home's card temporarily reverted to an older
 re-established a subscription about 4.6 minutes after the last deliberate reset,
 and the card caught up without another firmware restart. The final check after
 resubscription passed: Michael confirmed the card held 45% and then stayed Off
-without a spinner; PCA readback and firmware state agreed. The first board is
-ready for unpowered reassembly, left with saved Off.
+without a spinner; PCA readback and firmware state agreed. The first board was
+released for unpowered reassembly with saved Off, and Michael subsequently
+reported successful overall operation of that lamp.
+
+The second board passed chip/capacity and image preflight, flashed the unchanged
+real firmware 0.1.3, and passed default-Off startup, six On-frame register checks,
+Off and saved-Off reboot. Both Home fabrics completed commissioning and were
+persisted; two controller subscriptions were primed. Home power, brightness and
+temperature commands reached the real driver. An idle spinner cleared after
+restarting Home; Michael confirmed Off held, and zero PWM verified. The second
+board is saved Off and ready for unpowered assembly. Its loaded operation remains
+pending; the first board's network/watchdog fault tests were not repeated on it.
 
 These live results are separate from the build/test gates above. The
 [validation record](validation-record.md) retains their measurements, exact
 states, failure findings and private-log locations. Michael considers probing
-complete; the second board proceeds through flashing, commissioning and live
-operation without repeating routine connector measurements.
+complete; no further routine connector measurements are owed on either board.
 
-Loaded LED output and startup flashes, closed-housing radio performance,
-two-lamp Home grouping, sustained outages and the second board remain
+Detailed loaded-output/startup checks, closed-housing radio recovery, two-lamp
+Home grouping, sustained outages and the second lamp's loaded operation remain
 unverified. Use [bench bring-up](bench-bring-up.md) for service and reassembly.
