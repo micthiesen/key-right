@@ -162,6 +162,7 @@ pub async fn supervise(
         }
     };
     let confirm = async {
+        let mut rollback_unavailable_logged = false;
         while service.is_unconfirmed() {
             let uptime_ms = Instant::now().as_millis();
             let verdict = ota_verdict(
@@ -176,6 +177,16 @@ pub async fn supervise(
                     Ok(_) => log::warn!("OTA image confirmed after {uptime_ms} ms"),
                     Err(error) => log::error!("OTA confirm write failed: {error:?}; retrying"),
                 },
+                OtaVerdict::RollBack if !service.can_roll_back() => {
+                    // A bootloader that ignores image states would just boot
+                    // this image again; keep running and confirm when healthy.
+                    if !rollback_unavailable_logged {
+                        rollback_unavailable_logged = true;
+                        log::error!(
+                            "OTA image unhealthy after {uptime_ms} ms, but the bootloader cannot roll back; staying up"
+                        );
+                    }
+                }
                 OtaVerdict::RollBack => {
                     let off = prepare_reboot();
                     log::error!(

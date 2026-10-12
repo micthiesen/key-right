@@ -64,7 +64,7 @@ Both installed boards report 4 MiB flash; no PSRAM is required. Detect each devi
 capacity before flashing.
 
 Firmware 0.1.5 (software version 6) adds OTA via esp-lan-ota, pinned at rev
-`9b6df6712f2727ecdc7cce8045e39b347085340c`, in the real `key-right` image only.
+`5e214ee6aafe642cf1a1bbbe583bae95e460b4a1`, in the real `key-right` image only.
 Its cluster sits on light endpoint 1. The bench image has no OTA and the
 project name `key-right-bench`, which lamps refuse. Layout: `nvs` stays at
 `0x9000`/`0x10000`; `otadata` `0x19000`/`0x2000`; `ota_0` `0x20000` and `ota_1`
@@ -76,7 +76,8 @@ next 15 minutes; a reset before enrolling reopens the window. Use
 `esp-ota push <lamp> <elf>` for later updates. An updated
 image confirms only when it is commissioned, has Wi-Fi/IPv6 currently healthy for 30 s,
 and passes PCA readback. Otherwise it resets unconfirmed after 5 minutes, and
-the bootloader rolls back. Any earlier reset, including console `reboot`, also
+the bootloader rolls back; with a bootloader that cannot roll back it stays up
+instead of reset-looping. Any earlier reset, including console `reboot`, also
 rolls back. OTA reboots use the normal verified-zero reboot, which preserves
 intent. The real image fills 95% of a slot, about 99 KiB headroom; check
 `flash.sh --check` before adding features. Neither board is migrated yet.

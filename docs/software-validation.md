@@ -3,7 +3,7 @@
 ## 2026-10-12 OTA via esp-lan-ota, 0.1.5
 
 Basic Information software version is **6 / `0.1.5`**. The real image adds
-esp-lan-ota at rev `9b6df6712f2727ecdc7cce8045e39b347085340c`, which adds one
+esp-lan-ota at rev `5e214ee6aafe642cf1a1bbbe583bae95e460b4a1`, which adds one
 lockfile entry. `rs-matter` remains 0.2.0, and no other locked package changed.
 esp-storage's `critical-section` feature is now enabled, so flash operations
 mask interrupts. The partition table moves to two `0x1F0000` OTA slots, with

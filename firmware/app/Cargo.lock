@@ -276,11 +276,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "211713d2e9fb4793ce4360a712c0764264aff6be48932ccf02ca2a331c0436a9"
 dependencies = [
  "btuuid",
- "embassy-sync 0.8.0",
+ "embassy-sync 0.7.2",
  "embedded-io 0.7.1",
  "embedded-io-async 0.7.0",
  "futures-intrusive",
- "heapless 0.9.3",
+ "heapless 0.8.0",
 ]
 
 [[package]]
@@ -1427,7 +1427,7 @@ dependencies = [
 [[package]]
 name = "esp-lan-ota"
 version = "0.1.0"
-source = "git+https://github.com/micthiesen/esp-lan-ota?rev=9b6df6712f2727ecdc7cce8045e39b347085340c#9b6df6712f2727ecdc7cce8045e39b347085340c"
+source = "git+https://github.com/micthiesen/esp-lan-ota?rev=5e214ee6aafe642cf1a1bbbe583bae95e460b4a1#5e214ee6aafe642cf1a1bbbe583bae95e460b4a1"
 dependencies = [
  "embassy-time",
  "embedded-storage",

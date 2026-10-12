@@ -268,7 +268,7 @@ esp-ota push lamp-a firmware/app/target/riscv32imc-unknown-none-elf/release/key-
 zero output and reboots. Saved power, level and temperature are restored as
 after any reset. The new image confirms itself only when it is commissioned,
 has kept associated Wi-Fi with usable local IPv6 for the last 30 s without a
-break, and its PCA readback passes. If that has not happened 5 minutes after boot, it resets unconfirmed.
+break, and its PCA readback passes. If that has not happened 5 minutes after boot, it resets unconfirmed (only when the bootloader reports rollback support; otherwise it keeps running and confirms once healthy).
 Any reset before confirmation, including console `reboot` or the watchdog,
 lets the bootloader return to the previous image. Uploads are refused while the
 running image is unconfirmed. The real image fills about 95% of a `0x1F0000`
