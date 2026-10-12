@@ -268,8 +268,17 @@ The real C3 image must include normal Matter control and USB status,
 register-readback, power, level, temperature, verification, pairing, and recovery.
 Keep `scripts/device.py` and its `KR OK`/`KR ERR` protocol. The console must not
 block startup waiting for a host. No calibration wizard, new JSON command family,
-network console, cloud service, OTA system, or extra installation firmware is
-required for this installation.
+network console, cloud service, or extra installation firmware is required for
+this installation.
+
+From 0.1.5, the real image accepts updates through esp-lan-ota's Matter
+cluster. Updates require Administer privilege, and the image must have the
+`key-right` project name. An updated image confirms itself only after Matter is
+commissioned, local Wi-Fi/IPv6 has been continuously healthy for the last 30 s, and PCA readback
+passes. Otherwise the bootloader rolls back to the previous image after an
+unconfirmed reset, which happens no later than 5 minutes after boot. Update
+reboots preserve durable intent, startup policy, and fabrics. The bench image
+has no OTA.
 
 The bench image uses the same runtime, Matter, console, and network paths with
 simulated output. Its status and register responses must identify simulation;
@@ -285,8 +294,9 @@ Before flashing:
    existing host/control tests.
 3. Detect chip and flash capacity before writing. Reject the wrong chip or an
    image/partition layout that cannot fit. Start from a 4 MiB budget, without
-   PSRAM or OTA slots, and validate against the detected device. Normal flashing
-   must preserve NVS; full erase must be explicit.
+   PSRAM, with two equal OTA slots and NVS unchanged at `0x9000`/`0x10000`, and
+   validate against the detected device. Normal flashing must preserve NVS and
+   erase only `otadata`; full erase must be explicit.
 4. Document and exercise native USB flashing, console access, and BOOT/RESET
    recovery under the installed assembly's power-isolation rule.
 

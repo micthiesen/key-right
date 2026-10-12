@@ -16,6 +16,13 @@ class PreflightTests(unittest.TestCase):
         stack_check = patch.object(flash, "check_stack", return_value=70_000)
         stack_check.start()
         self.addCleanup(stack_check.stop)
+        directory = tempfile.TemporaryDirectory(prefix="key-right-bootloader-test-")
+        self.addCleanup(directory.cleanup)
+        bootloader = Path(directory.name) / "esp32c3-bootloader.bin"
+        bootloader.write_bytes(b"\xe9" + bytes(31))
+        bootloader_path = patch.object(flash, "BOOTLOADER", bootloader)
+        bootloader_path.start()
+        self.addCleanup(bootloader_path.stop)
 
     def test_chip_and_capacity_must_be_detected(self):
         self.assertEqual(flash.board_capacity("Chip type: ESP32-C3 (revision v0.4)\nFlash size: 4MB\n"), 4 * 1024 * 1024)
@@ -30,18 +37,31 @@ class PreflightTests(unittest.TestCase):
             with self.subTest(report=report), self.assertRaises(ValueError):
                 flash.board_capacity(report)
 
-    def test_partition_overflow_overlap_and_missing_factory_fail(self):
+    def test_ota_layout_preserves_nvs_and_rejects_unsafe_tables(self):
+        valid = (
+            "nvs,data,nvs,0x9000,0x10000,\n"
+            "otadata,data,ota,0x19000,0x2000,\n"
+            "ota_0,app,ota_0,0x20000,0x1F0000,\n"
+            "ota_1,app,ota_1,0x210000,0x1F0000,\n"
+        )
         for contents in (
-            "factory,app,factory,0x20000,0x400000,\n",
-            "nvs,data,nvs,0x9000,0x30000,\nfactory,app,factory,0x20000,0x10000,\n",
-            "nvs,data,nvs,0x9000,0x10000,\n",
+            valid.replace("0x210000,0x1F0000", "0x210000,0x200000"),
+            valid.replace("nvs,data,nvs,0x9000,0x10000", "nvs,data,nvs,0x9000,0x6000"),
+            valid.replace("nvs,data,nvs,0x9000", "nvs,data,nvs,0xA000"),
+            valid.replace("0x19000,0x2000", "0x19000,0x1000"),
+            valid.replace("ota_1,app,ota_1,0x210000,0x1F0000", "ota_1,app,ota_1,0x210000,0x1E0000"),
+            valid.replace("ota_1,app,ota_1,0x210000", "ota_1,app,ota_1,0x211000"),
+            valid.replace("otadata,data,ota,0x19000,0x2000,\n", ""),
+            valid.replace("ota_1,app,ota_1,0x210000,0x1F0000,\n", ""),
+            valid + "factory,app,factory,0x20000,0x10000,\n",
+            "nvs,data,nvs,0x9000,0x10000,\nfactory,app,factory,0x20000,0x3e0000,\n",
         ):
             with tempfile.TemporaryDirectory(prefix="key-right-flash-test-") as directory:
                 path = Path(directory) / "partitions.csv"
                 path.write_text(contents)
-                with self.assertRaises(ValueError):
+                with self.subTest(contents=contents), self.assertRaises(ValueError):
                     flash.validate_partitions(path, flash.MIN_FLASH)
-        self.assertEqual(flash.validate_partitions(flash.APP / "partitions.csv", flash.MIN_FLASH), flash.MIN_FLASH)
+        self.assertEqual(flash.validate_partitions(flash.APP / "partitions.csv", flash.MIN_FLASH), 0x1F0000)
 
     def test_info_does_not_build_or_flash(self):
         with patch.object(flash.shutil, "which", return_value="espflash"), patch.object(flash, "run", return_value="Chip type: esp32c3\nFlash size: 4MB\n") as run:
@@ -69,10 +89,33 @@ class PreflightTests(unittest.TestCase):
         calls = [call.args[0] for call in run.call_args_list]
         self.assertEqual([call[1] for call in calls], ["build", "board-info", "save-image", "flash"])
         self.assertIn("key-right-bench", calls[0])
-        self.assertEqual(calls[-1][calls[-1].index("--flash-size") + 1], "8mb")
-        for forbidden in ("--chip", "--force", "--no-verify", "--erase-parts", "--erase-data-parts"):
-            self.assertNotIn(forbidden, calls[-1])
-        self.assertTrue(calls[-1][-1].endswith("/key-right-bench"))
+        self.assertEqual(calls[2][calls[2].index("--target-app-partition") + 1], "ota_0")
+        command = calls[-1]
+        self.assertEqual(command[command.index("--flash-size") + 1], "8mb")
+        self.assertEqual(command[command.index("--bootloader") + 1], str(flash.BOOTLOADER))
+        self.assertEqual(command[command.index("--target-app-partition") + 1], "ota_0")
+        # Only boot selection is erased; NVS and both app slots are never erased.
+        self.assertEqual(command[command.index("--erase-parts") + 1], "otadata")
+        self.assertEqual(command.count("--erase-parts"), 1)
+        for forbidden in ("--chip", "--force", "--no-verify", "--erase-data-parts", "nvs"):
+            self.assertNotIn(forbidden, command)
+        self.assertTrue(command[-1].endswith("/key-right-bench"))
+
+    def test_vendored_bootloader_and_malformed_bootloaders(self):
+        self.assertLess(flash.check_bootloader(flash.BOOTLOADER), 0x8000)
+        self.assertGreater(flash.check_bootloader(flash.APP / "bootloader" / "esp32c3-bootloader.bin"), 0)
+        for contents in (b"", b"\x00" + bytes(31), b"\xe9" + bytes(0x8000)):
+            with tempfile.TemporaryDirectory(prefix="key-right-bootloader-test-") as directory:
+                path = Path(directory) / "bootloader.bin"
+                path.write_bytes(contents)
+                with self.assertRaises(ValueError):
+                    flash.check_bootloader(path)
+
+    def test_missing_bootloader_stops_before_build_or_flash(self):
+        with patch.object(flash, "BOOTLOADER", flash.APP / "bootloader" / "absent.bin"), patch.object(flash.shutil, "which", return_value="espflash"), patch.object(flash, "run") as run:
+            with self.assertRaisesRegex(ValueError, "rollback-enabled"):
+                flash.main(["/dev/fake"])
+        run.assert_not_called()
 
     def test_oversized_generated_image_stops_before_flash(self):
         def execute(arguments, **_kwargs):
@@ -80,7 +123,7 @@ class PreflightTests(unittest.TestCase):
                 return "Chip type: esp32c3\nFlash size: 4MB\n"
             if arguments[1] == "save-image":
                 with Path(arguments[-1]).open("wb") as output:
-                    output.truncate(flash.MIN_FLASH + 1)
+                    output.truncate(0x1F0000 + 1)
             return ""
 
         with patch.object(flash.shutil, "which", return_value="espflash"), patch.object(flash, "run", side_effect=execute) as run:

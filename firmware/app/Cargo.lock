@@ -1425,6 +1425,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp-lan-ota"
+version = "0.1.0"
+source = "git+https://github.com/micthiesen/esp-lan-ota?rev=9b6df6712f2727ecdc7cce8045e39b347085340c#9b6df6712f2727ecdc7cce8045e39b347085340c"
+dependencies = [
+ "embassy-time",
+ "embedded-storage",
+ "rs-matter",
+ "sha2",
+]
+
+[[package]]
 name = "esp-metadata-generated"
 version = "0.4.0"
 source = "git+https://github.com/esp-rs/esp-hal?rev=10e48dd74837bae4be663a7d1825d12875363727#10e48dd74837bae4be663a7d1825d12875363727"
@@ -2073,7 +2084,7 @@ dependencies = [
 
 [[package]]
 name = "key-right-app"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "bt-hci",
  "embassy-embedded-hal",
@@ -2087,6 +2098,7 @@ dependencies = [
  "esp-backtrace",
  "esp-bootloader-esp-idf",
  "esp-hal",
+ "esp-lan-ota",
  "esp-metadata-generated",
  "esp-println",
  "esp-radio",

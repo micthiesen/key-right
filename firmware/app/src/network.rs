@@ -30,9 +30,13 @@ pub fn request_disconnect() -> Result<(), Error> {
 /// Longest continuous healthy interval in this transport run, including a
 /// completed interval before its failure. Call before `restarted()` clears it.
 pub fn healthy_for_ms(now_ms: u64) -> u64 {
+    current_healthy_ms(now_ms).max(LONGEST_HEALTHY_MS.load(Ordering::Relaxed))
+}
+/// The current uninterrupted healthy interval only; zero while unhealthy.
+pub fn current_healthy_ms(now_ms: u64) -> u64 {
     let now_ms = crate::network_driver::healthy_until(now_ms);
     let since = HEALTHY_SINCE.load(Ordering::Relaxed);
-    let current = if since == u64::MAX
+    if since == u64::MAX
         || CONNECTED.load(Ordering::Relaxed) == 0
         || LOCAL_READY.load(Ordering::Relaxed) == 0
         || RSSI.load(Ordering::Relaxed) == i32::MIN
@@ -40,8 +44,7 @@ pub fn healthy_for_ms(now_ms: u64) -> u64 {
         0
     } else {
         now_ms.saturating_sub(since)
-    };
-    current.max(LONGEST_HEALTHY_MS.load(Ordering::Relaxed))
+    }
 }
 fn end_healthy_period(now_ms: u64) {
     let now_ms = crate::network_driver::healthy_until(now_ms);

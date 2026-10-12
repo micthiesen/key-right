@@ -21,6 +21,9 @@ ending `39:ec:f4`, was updated on September 29: both Home fabrics loaded, saved
 On restored, PCA checks passed, and saved Off survived a software reboot with
 Wi-Fi/IP ready. Board B remains on 0.1.3. Visual fades and the resistor trial
 remain unverified.
+Firmware 0.1.5 adds Matter-delivered OTA updates through
+[esp-lan-ota](https://github.com/micthiesen/esp-lan-ota). Neither board has
+been migrated to it; see [OTA updates](#ota-updates).
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 
@@ -50,7 +53,7 @@ The board configuration is:
 | Cargo and target | `esp32c3` crate features, `riscv32imc-unknown-none-elf` |
 | `src/device.rs` | SDA GPIO4, SCL GPIO5, 100 kHz I²C, open-drain OE GPIO6 initially released HIGH |
 | USB and antenna | Native USB on GPIO18/19; no firmware antenna-selection GPIO |
-| Flash | Detect C3 and capacity; require at least 4 MiB and verify image/partition fit before writing |
+| Flash | Detect C3 and capacity; require at least 4 MiB, the two-slot OTA layout, and image fit in `ota_0` before writing |
 | Firmware gates | Real and simulated C3 images; software checks do not establish physical operation |
 
 Keep the pinned Rust/Matter set together where compatible. Record necessary
@@ -159,11 +162,12 @@ python3 scripts/device.py --list
 ```
 
 Before the first write, the flash helper must verify chip identity and detected
-flash capacity. The layout requires 4 MiB: NVS at `0x9000..0x19000` and one
-factory application at `0x20000..0x400000`, with no OTA slot. Treat 4 MiB as a
-budget until the C3 reports its capacity; verify image/layout fit. Preserve NVS
-on normal flashes, never erase implicitly, and do not copy populated NVS between
-devices. Validate BOOT/RESET native USB recovery on this board during bring-up.
+flash capacity. The layout requires 4 MiB: NVS at `0x9000..0x19000` (unchanged
+from the earlier factory layout), `otadata` at `0x19000..0x1B000`, and two
+`0x1F0000` app slots, `ota_0` at `0x20000` and `ota_1` at `0x210000`. There is
+no factory partition. Treat 4 MiB as a budget until the C3 reports its capacity;
+verify image/slot fit. Preserve NVS on normal flashes, erase only `otadata`, and
+do not copy populated NVS between devices. Validate BOOT/RESET native USB recovery on this board during bring-up.
 The [Espressif USB guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32c3/api-guides/usb-serial-jtag-console.html)
 describes the chip's fixed Serial/JTAG function; this project retains its Rust
 USB implementation rather than switching to ESP-IDF or TinyUSB.
@@ -219,13 +223,62 @@ sh scripts/flash.sh PORT
 ```
 
 `--info` queries chip/capacity without building or writing flash. `--check`
-builds and checks image/partition fit without a connected board. The default
-port command checks the connected device before flashing the real image.
+builds the image, checks the OTA layout, and reports the image size and headroom
+in one slot, all without a connected board. The default port command checks the
+connected device before flashing the real image.
 `--bench` explicitly selects the simulated image; it cannot validate the PCA.
 
-For the next planned opening, use the normal real image (0.1.4, Matter software
-version 5), retain each board's NVS and existing Home membership, and follow the
-VBUS-blocked USB rule. No new commissioning or routine probing is needed.
+Every USB flash writes esp-lan-ota's rollback-enabled bootloader
+(`firmware/app/bootloader/esp32c3-bootloader.bin`), the partition table, and the
+app to `ota_0`, and erases `otadata` (`--target-app-partition ota_0
+--erase-parts otadata`). The helper refuses to flash if the bootloader is
+missing; see that directory's README for its provenance. NVS is never erased.
+
+### OTA updates
+
+The real image carries the esp-lan-ota Matter cluster on light endpoint 1. It
+needs no extra socket. Commands require Administer privilege on one of the
+lamp's fabrics. The bench image has no OTA, and its project name,
+`key-right-bench`, differs from `key-right`, so a lamp refuses it.
+
+Each board needs one USB migration from the factory layout. Use the normal flash
+helper under the VBUS-blocked USB rule. It installs the new bootloader and table,
+writes `ota_0` at the old factory address, and erases `otadata`. NVS, both Home
+fabrics, and saved intent remain in place. The first boot then opens a
+15-minute enrollment window and prints `esp-lan-ota enroll ...` on the USB
+console every 5 s. The enrollment period ends after those 15 minutes or at the
+first upload, and a reset before then reopens the window. The line contains the
+lamp's setup passcode, so keep captures under `local/`:
+
+```sh
+cargo install --git https://github.com/micthiesen/esp-lan-ota esp-ota
+sh scripts/flash.sh PORT
+esp-ota enroll lamp-a --serial PORT      # within 15 minutes of that boot
+esp-ota status lamp-a                    # expect rollback supported after an update
+```
+
+Later updates use Wi-Fi only:
+
+```sh
+sh scripts/flash.sh --check              # build, stack gate, slot fit
+esp-ota push lamp-a firmware/app/target/riscv32imc-unknown-none-elf/release/key-right
+```
+
+`push` writes the inactive slot and verifies it. The lamp then drives verified
+zero output and reboots. Saved power, level and temperature are restored as
+after any reset. The new image confirms itself only when it is commissioned,
+has kept associated Wi-Fi with usable local IPv6 for the last 30 s without a
+break, and its PCA readback passes. If that has not happened 5 minutes after boot, it resets unconfirmed.
+Any reset before confirmation, including console `reboot` or the watchdog,
+lets the bootloader return to the previous image. Uploads are refused while the
+running image is unconfirmed. The real image fills about 95% of a `0x1F0000`
+slot, roughly 100 KiB of headroom. `flash.sh --check` reports the current
+figure.
+
+For the next planned opening, use the normal real image (0.1.5, Matter software
+version 6). This is each board's one-time OTA migration, described above. Retain
+each board's NVS and existing Home membership, and follow the VBUS-blocked USB
+rule. No new commissioning or routine probing is needed.
 After update, verify On/Off, brightness and temperature fades visually, interrupt
 a fade with another setting, and check that Home holds its chosen targets.
 Check saved Off after a restart before closing up. The confirmed panel glow has

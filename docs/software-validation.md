@@ -1,5 +1,36 @@
 # Software verification
 
+## 2026-10-12 OTA via esp-lan-ota, 0.1.5
+
+Basic Information software version is **6 / `0.1.5`**. The real image adds
+esp-lan-ota at rev `9b6df6712f2727ecdc7cce8045e39b347085340c`, which adds one
+lockfile entry. `rs-matter` remains 0.2.0, and no other locked package changed.
+esp-storage's `critical-section` feature is now enabled, so flash operations
+mask interrupts. The partition table moves to two `0x1F0000` OTA slots, with
+`nvs` unchanged. The bench image has no OTA and is named `key-right-bench`.
+
+| Check | Result |
+| --- | --- |
+| `sh scripts/check.sh` | Formatting, strict Clippy, 34 core/CLI Rust tests, CLI simulation and 31 Python tests passed |
+| `sh scripts/check-firmware.sh` | Formatting, strict host/C3 Clippy, 87 application host tests, simulated/real/radio-diagnostic release builds and linked-stack checks passed |
+| `sh scripts/flash.sh --check` | Real image: 1,930,240 / 2,031,616 bytes of `ota_0`, 95.01%, 101,376 bytes of headroom; linked main-stack reservation 45,904 bytes |
+| `sh scripts/flash.sh --bench --check` | Simulated image: 1,893,872 / 2,031,616 bytes, 93.22%; linked main-stack reservation 47,880 bytes |
+
+Against the previous commit built with the same toolchain, the real image grew
+from 1,906,768 bytes to 1,930,240 bytes. Static RAM grew by 1,248 bytes: `.data`
++152, `.bss` +784, and the IRAM mirror +312. The linked main-stack reservation
+fell from 47,152 bytes to 45,904 bytes. The OTA service reuses the existing
+partition-table buffer, so there is no new 3 KiB stack array. The 100 KiB heap
+split and 32 KiB transport arena are unchanged.
+
+New tests cover the confirm/rollback decision and the OTA partition-layout
+preflight. They also check that the flash command writes the bootloader,
+targets `ota_0`, and erases only `otadata`. The helper refuses to run if the
+bootloader is missing, lacks the `0xE9` magic, or reaches `0x8000`. The vendored
+bootloader is from esp-lan-ota `9b6df67`, SHA-256 `b75548cd…f6c0`. The
+confirmation gate uses the current uninterrupted network-health interval. No board was connected or flashed. Migration and OTA checks are
+pending in the [validation record](validation-record.md#ota-migration-firmware-015-pending).
+
 ## 2026-09-29 smooth transitions, 0.1.4
 
 Both software gates passed for the prepared release, with the installed lamps

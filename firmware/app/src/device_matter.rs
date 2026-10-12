@@ -6,7 +6,7 @@ use core::fmt::Write as _;
 use crate::commissioning::{qr_payload, DiscoveryName};
 use crate::commissioning_ble::NamedBle;
 use crate::network_driver::EspWifiDriver;
-use embassy_futures::join::join3;
+use embassy_futures::join::join4;
 use embassy_time::{Duration, Instant, Timer};
 use esp_bootloader_esp_idf::partitions::PARTITION_TABLE_MAX_LEN;
 use esp_hal::peripherals::{ADC1, BT, FLASH, RNG, WIFI};
@@ -23,7 +23,7 @@ use rs_matter_embassy::matter::dm::clusters::scenes::{
 };
 use rs_matter_embassy::matter::dm::devices::test::{DAC_PRIVKEY, TEST_DEV_ATT, TEST_PID, TEST_VID};
 use rs_matter_embassy::matter::dm::{
-    Async, Dataver, DeviceType, EmptyHandler, Endpoint, EpClMatcher, Node,
+    Async, Cluster, Dataver, DeviceType, EmptyHandler, Endpoint, EpClMatcher, Node,
 };
 use rs_matter_embassy::matter::error::{Error, ErrorCode};
 use rs_matter_embassy::matter::utils::init::InitMaybeUninit;
@@ -55,21 +55,37 @@ const COLOR_TEMPERATURE_LIGHT: DeviceType = DeviceType {
     drev: 4,
 };
 
+// The real image adds the esp-lan-ota cluster to the light endpoint; the
+// bench image has no OTA. Endpoint 0 stays under rs-matter-stack's handler.
+#[cfg(feature = "hardware-light")]
+const LIGHT_CLUSTERS: &[Cluster<'static>] = clusters!(
+    desc::DescHandler::CLUSTER,
+    identify::CLUSTER,
+    groups::FULL_CLUSTER.with_features(groups::Feature::GROUP_NAMES.bits()),
+    scenes::FULL_CLUSTER,
+    presets::ON_OFF_CLUSTER,
+    presets::LEVEL_CLUSTER,
+    presets::COLOR_CLUSTER,
+    crate::ota::CLUSTER
+);
+#[cfg(not(feature = "hardware-light"))]
+const LIGHT_CLUSTERS: &[Cluster<'static>] = clusters!(
+    desc::DescHandler::CLUSTER,
+    identify::CLUSTER,
+    groups::FULL_CLUSTER.with_features(groups::Feature::GROUP_NAMES.bits()),
+    scenes::FULL_CLUSTER,
+    presets::ON_OFF_CLUSTER,
+    presets::LEVEL_CLUSTER,
+    presets::COLOR_CLUSTER
+);
+
 const NODE: Node = Node {
     endpoints: &[
         EmbassyWifiMatterStack::<0, ()>::root_endpoint(),
         Endpoint::new(
             LIGHT_ENDPOINT,
             devices!(COLOR_TEMPERATURE_LIGHT),
-            clusters!(
-                desc::DescHandler::CLUSTER,
-                identify::CLUSTER,
-                groups::FULL_CLUSTER.with_features(groups::Feature::GROUP_NAMES.bits()),
-                scenes::FULL_CLUSTER,
-                presets::ON_OFF_CLUSTER,
-                presets::LEVEL_CLUSTER,
-                presets::COLOR_CLUSTER
-            ),
+            LIGHT_CLUSTERS,
         ),
     ],
 };
@@ -97,6 +113,9 @@ pub async fn run<H: crate::runtime::Hardware>(
             .await
         }
     };
+    // Reuses the partition-table buffer; NVS discovery no longer borrows it.
+    #[cfg(feature = "hardware-light")]
+    let ota = crate::ota::start(&mut partition_table);
     let passcode = match crate::boot::restore(
         "Commissioning credential storage failed",
         async || commissioning_passcode(&mut store, &trng),
@@ -132,7 +151,7 @@ pub async fn run<H: crate::runtime::Hardware>(
         pid: TEST_PID,
         hw_ver: 1,
         hw_ver_str: "ESP32-C3_MINI_V1",
-        sw_ver: 5,
+        sw_ver: 6,
         sw_ver_str: env!("CARGO_PKG_VERSION"),
         device_type: Some(COLOR_TEMPERATURE_LIGHT.dtype),
         ..BasicInfoConfig::new()
@@ -251,6 +270,18 @@ pub async fn run<H: crate::runtime::Hardware>(
             EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(desc::DescHandler::CLUSTER.id)),
             Async(desc::DescHandler::new(Dataver::new_rand(&mut weak_rand)).adapt()),
         );
+    #[cfg(feature = "hardware-light")]
+    let handler = handler.chain(
+        EpClMatcher::new(Some(LIGHT_ENDPOINT), Some(crate::ota::CLUSTER_ID)),
+        Async(crate::ota::OtaHandler::new(
+            ota,
+            Dataver::new_rand(&mut weak_rand),
+        )),
+    );
+    // Only the first boot after a USB flash opens this window (persisted
+    // fabrics are already loaded). The console line is for `esp-ota enroll`.
+    #[cfg(feature = "hardware-light")]
+    let enrollment = crate::ota::open_window(ota, stack.matter(), &crypto);
     let mut driver = EspWifiDriver::new(wifi, bt);
 
     log::warn!("identity={identity}; color-temperature light; public development attestation");
@@ -307,7 +338,25 @@ pub async fn run<H: crate::runtime::Hardware>(
             Timer::after(Duration::from_secs(retry_secs)).await;
         }
     };
-    join3(
+    let updates = async {
+        #[cfg(feature = "hardware-light")]
+        crate::ota::supervise(
+            ota,
+            enrollment,
+            || stack.is_commissioned(),
+            || {
+                let snapshot = runtime.snapshot();
+                snapshot.fault == crate::runtime::Fault::None
+                    && snapshot.applied_frame.is_some()
+                    && runtime.verify().is_ok()
+            },
+            || runtime.prepare_reboot(),
+        )
+        .await;
+        #[cfg(not(feature = "hardware-light"))]
+        core::future::pending::<()>().await;
+    };
+    join4(
         transport,
         crate::console::run(
             rx,
@@ -318,6 +367,7 @@ pub async fn run<H: crate::runtime::Hardware>(
             || stack.is_commissioned(),
         ),
         presets::maintenance(&runtime, &light, || watchdog.feed()),
+        updates,
     )
     .await;
     unreachable!()

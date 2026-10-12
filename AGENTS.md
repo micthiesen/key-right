@@ -63,6 +63,24 @@ recovery remain unverified; do not repeat completed probing.
 Both installed boards report 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 
+Firmware 0.1.5 (software version 6) adds OTA via esp-lan-ota, pinned at rev
+`9b6df6712f2727ecdc7cce8045e39b347085340c`, in the real `key-right` image only.
+Its cluster sits on light endpoint 1. The bench image has no OTA and the
+project name `key-right-bench`, which lamps refuse. Layout: `nvs` stays at
+`0x9000`/`0x10000`; `otadata` `0x19000`/`0x2000`; `ota_0` `0x20000` and `ota_1`
+`0x210000`, each `0x1F0000`; no factory. Each board needs one USB migration with
+`scripts/flash.sh PORT`: the rollback bootloader in `firmware/app/bootloader/`,
+the new table, `--target-app-partition ota_0` and `--erase-parts otadata`. NVS
+and Home fabrics are untouched. Then run `esp-ota enroll <lamp>` within the
+next 15 minutes; a reset before enrolling reopens the window. Use
+`esp-ota push <lamp> <elf>` for later updates. An updated
+image confirms only when it is commissioned, has Wi-Fi/IPv6 currently healthy for 30 s,
+and passes PCA readback. Otherwise it resets unconfirmed after 5 minutes, and
+the bootloader rolls back. Any earlier reset, including console `reboot`, also
+rolls back. OTA reboots use the normal verified-zero reboot, which preserves
+intent. The real image fills 95% of a slot, about 99 KiB headroom; check
+`flash.sh --check` before adding features. Neither board is migrated yet.
+
 The C3 takes power directly from J6's measured 3.37 V rail at its `3.3` pad.
 No buck, C3 `5V` connection, extra pull-ups, translator, lifted PCA pins, or output
 interlock is part of the design. The rocker is already bypassed ON. With lamp

@@ -1,6 +1,6 @@
 [package]
 name = "key-right-app"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 rust-version = "1.88"
 publish = false
@@ -44,7 +44,17 @@ tinyrlibc = { version = "0.5", default-features = false, features = [
   "utoa",
   "strtoul",
 ] }
-esp-storage = { version = "0.9", default-features = false, features = ["esp32c3"] }
+# `critical-section` (esp-storage's default) masks interrupts during each flash
+# operation; OTA writes hundreds of sectors while Wi-Fi interrupts run.
+esp-storage = { version = "0.9", default-features = false, features = [
+  "esp32c3",
+  "critical-section",
+] }
+# Verified, rollback-safe updates over a manufacturer Matter cluster. Real image
+# only: the bench image never carries OTA and has a different project name.
+esp-lan-ota = { git = "https://github.com/micthiesen/esp-lan-ota", rev = "9b6df6712f2727ecdc7cce8045e39b347085340c", features = [
+  "rs-matter-0-2",
+], optional = true }
 esp-metadata-generated = { version = "0.4", default-features = false, features = ["esp32c3"] }
 
 log = { version = "0.4", default-features = false }
@@ -102,7 +112,7 @@ static_cell = "2"
 [features]
 # Required explicitly: this image acknowledges simulated output only.
 bench-light = []
-hardware-light = []
+hardware-light = ["dep:esp-lan-ota"]
 # Bench-only boot scan; normal Matter and physical-output control stay enabled.
 radio-diagnostics = []
 

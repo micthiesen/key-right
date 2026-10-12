@@ -21,6 +21,17 @@ TARGET = "riscv32imc-unknown-none-elf"
 # while restoring Home fabrics. Keep more headroom; this is still not a runtime
 # high-water measurement and cannot replace live boot/recovery checks.
 MIN_STACK = 32 * 1024
+# esp-lan-ota's rollback-enabled ESP-IDF bootloader; see bootloader/README.md.
+BOOTLOADER = APP / "bootloader" / "esp32c3-bootloader.bin"
+# Both lamps' Home fabrics live here. Never move or resize it.
+NVS = (0x9000, 0x10000)
+OTADATA_SIZE = 0x2000
+PARTITION_TABLE_OFFSET = 0x8000
+APP_ALIGN = 0x10000
+# USB flashes write ota_0 and erase only otadata, so the bootloader starts the
+# new image and the firmware opens its one-time esp-ota enrollment window.
+APP_SLOT = "ota_0"
+ERASE_PARTS = "otadata"
 
 
 def elf_stack_size(data):
@@ -74,6 +85,21 @@ def board_capacity(report):
     return capacity
 
 
+def check_bootloader(path):
+    """The C3 bootloader sits at 0x0 and must end before the table at 0x8000."""
+    if not path.is_file():
+        raise ValueError(
+            f"Missing {path}: add esp-lan-ota's rollback-enabled ESP32-C3 bootloader "
+            "(see firmware/app/bootloader/README.md); no flash was written"
+        )
+    data = path.read_bytes()
+    if not data or data[0] != 0xE9:
+        raise ValueError(f"{path} is not an ESP image (no 0xE9 magic); no flash was written")
+    if len(data) >= PARTITION_TABLE_OFFSET:
+        raise ValueError(f"{path} is {len(data)} bytes and would overlap the partition table; no flash was written")
+    return len(data)
+
+
 def quantity(value):
     value = value.strip().lower()
     for suffix, factor in (("k", 1024), ("m", 1024 * 1024)):
@@ -83,6 +109,7 @@ def quantity(value):
 
 
 def validate_partitions(path, capacity):
+    """Check the OTA layout. Returns the ota_0 slot size an image must fit."""
     regions = []
     with path.open() as source:
         rows = csv.reader(line for line in source if line.strip() and not line.lstrip().startswith("#"))
@@ -95,12 +122,28 @@ def validate_partitions(path, capacity):
             if start < 0x9000 or length <= 0 or end > capacity:
                 raise ValueError(f"Partition {name!r} exceeds verified flash bounds")
             regions.append((start, end, name, kind, subtype))
-    if not any(kind == "app" and subtype == "factory" for _, _, _, kind, subtype in regions):
-        raise ValueError("The factory application partition is missing")
     regions.sort()
     if any(left[1] > right[0] for left, right in zip(regions, regions[1:])):
         raise ValueError("Flash partitions overlap")
-    return max(end for _, end, _, _, _ in regions)
+    by_subtype = {}
+    for start, end, name, kind, subtype in regions:
+        by_subtype.setdefault((kind, subtype), []).append((start, end - start, name))
+    if by_subtype.get(("data", "nvs")) != [(*NVS, "nvs")]:
+        raise ValueError("nvs must stay at 0x9000 with size 0x10000; paired Home fabrics live there")
+    if ("app", "factory") in by_subtype:
+        raise ValueError("The OTA layout has no factory partition")
+    otadata = by_subtype.get(("data", "ota"), [])
+    if len(otadata) != 1 or otadata[0][1] != OTADATA_SIZE or otadata[0][2] != ERASE_PARTS:
+        raise ValueError("Exactly one 0x2000-byte otadata partition is required")
+    slots = [by_subtype.get(("app", label), []) for label in ("ota_0", "ota_1")]
+    if any(len(slot) != 1 or slot[0][2] != label for slot, label in zip(slots, ("ota_0", "ota_1"))):
+        raise ValueError("Exactly one ota_0 and one ota_1 app partition are required")
+    (first, first_size, _), (second, second_size, _) = slots[0][0], slots[1][0]
+    if first_size != second_size:
+        raise ValueError("ota_0 and ota_1 must be the same size")
+    if any(value % APP_ALIGN for value in (first, first_size, second)):
+        raise ValueError("App partitions must be 64 KiB aligned")
+    return first_size
 
 
 def run(arguments, *, capture=False):
@@ -147,6 +190,8 @@ def main(arguments=None):
         parser.error("a USB port is required; list with python3 scripts/device.py --list")
     if shutil.which("espflash") is None:
         raise ValueError("Install espflash: cargo install espflash --version 4.5.0 --locked")
+    if not args.check and not args.info:
+        check_bootloader(BOOTLOADER)
     partition_table = APP / "partitions.csv"
     if args.info:
         capacity = detect(args.port)
@@ -166,27 +211,30 @@ def main(arguments=None):
     image = APP / "target" / TARGET / "release" / binary
     check_stack(image)
     capacity = MIN_FLASH if args.check else detect(args.port)
-    end = validate_partitions(partition_table, capacity)
-    # This local conversion validates the app image against the factory partition.
-    # The merged scratch file is never flashed, so NVS is not overwritten by padding.
+    slot = validate_partitions(partition_table, capacity)
+    # Convert the app image alone against ota_0. Nothing here is flashed.
     with tempfile.TemporaryDirectory(prefix="key-right-flash-") as temporary:
-        merged = Path(temporary) / "checked.bin"
+        converted = Path(temporary) / "app.bin"
         run([
             "espflash", "save-image", "--chip", "esp32c3", "--flash-size", "4mb",
-            "--partition-table", str(partition_table), "--merge", "--skip-padding",
-            "--skip-update-check", str(image), str(merged),
+            "--partition-table", str(partition_table), "--target-app-partition", APP_SLOT,
+            "--skip-update-check", str(image), str(converted),
         ])
-        if merged.stat().st_size > min(capacity, end):
-            raise ValueError("Generated image exceeds the verified partition/flash bounds")
+        size = converted.stat().st_size
+    if size > slot:
+        raise ValueError(f"App image is {size} bytes; the {APP_SLOT} slot holds {slot}")
+    print(f"App image: {size} of {slot} slot bytes; {slot - size} bytes headroom per OTA slot")
     if args.check:
         print("Build/image/partition check passed for 4 MiB; hardware identity remains unverified")
         return
-    print("Flashing verified ESP32-C3; NVS is preserved. USB VBUS must be blocked while lamp wires are attached.")
+    print("Flashing verified ESP32-C3 to ota_0; NVS is preserved; otadata is erased. USB VBUS must be blocked while lamp wires are attached.")
     # Let espflash detect the chip again. Capacity comes from the completed
-    # preflight, overriding any unrelated espflash project setting. No force,
-    # erase, or no-verify flags are used.
+    # preflight, overriding any unrelated espflash project setting. The only
+    # erase is otadata (boot selection), never NVS. No force or no-verify flags.
     run([
-        "espflash", "flash", "--partition-table", str(partition_table),
+        "espflash", "flash", "--bootloader", str(BOOTLOADER),
+        "--partition-table", str(partition_table),
+        "--target-app-partition", APP_SLOT, "--erase-parts", ERASE_PARTS,
         "--flash-size", f"{capacity // (1024 * 1024)}mb",
         "--port", args.port, "--non-interactive", "--skip-update-check", str(image),
     ])

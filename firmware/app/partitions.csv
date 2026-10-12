@@ -1,4 +1,8 @@
-# ESP32-C3 images, requires at least 4 MiB flash. No OTA partition yet.
+# ESP32-C3 OTA layout for esp-lan-ota; requires at least 4 MiB flash.
+# nvs keeps its original offset and size: both lamps' Home fabrics live there.
+# No factory partition: USB flashes target ota_0 and erase otadata.
 # Name, Type, SubType, Offset, Size, Flags
 nvs, data, nvs, 0x9000, 0x10000,
-factory, app, factory, 0x20000, 0x3e0000,
+otadata, data, ota, 0x19000, 0x2000,
+ota_0, app, ota_0, 0x20000, 0x1F0000,
+ota_1, app, ota_1, 0x210000, 0x1F0000,

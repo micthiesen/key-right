@@ -29,6 +29,9 @@ Board A runs **0.1.4**; board B remains on **0.1.3**. Version 0.1.4 adds
 to report selected targets immediately. Output-frame fades reach zero;
 intermediate frames never write flash. Visual fades and detailed loaded startup
 remain unverified. Low-output steps remain limited by the PCA's 8-bit resolution.
+Firmware 0.1.5 adds Matter-delivered OTA updates with bootloader rollback. It
+requires one USB migration per board, and neither board has had it yet. See
+[development](docs/development.md#ota-updates).
 The [validation record](docs/validation-record.md) separates installed-image
 results, user observations and remaining checks.
 

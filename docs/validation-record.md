@@ -20,7 +20,9 @@ remains; disappearance after longer Off and the electrical cause are unresolved.
 The report does not confirm installed resistor values, count or endpoints.
 Probing is complete. Board A's 0.1.4 flash and saved-Off reboot passed below;
 visual fades, detailed loaded startup and long-outage recovery remain unverified.
-Board B awaits its update. Detailed results and limits are recorded below.
+Board B awaits its update. Firmware 0.1.5 adds OTA updates; neither board has
+been migrated to the OTA layout (see [OTA migration](#ota-migration-firmware-015-pending)).
+Detailed results and limits are recorded below.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
 the error at the Key Light's U4 pads and confirmed the ESP end is correct. On
@@ -627,6 +629,27 @@ Both project software gates passed again after recording the update. A later
 optional status request found `/dev/cu.usbmodem2101` absent, and port listing
 returned no device. This happened after the successful reboot/status/PCA checks;
 the disconnect cause is unknown and the last verified state remains saved Off.
+
+## OTA migration, firmware 0.1.5, pending
+
+Firmware 0.1.5 (software version 6) adds esp-lan-ota updates over Matter. It is
+built and passes the software gates only. No board has been flashed with it,
+and no OTA step has run on hardware. Each board needs one USB migration through
+`scripts/flash.sh PORT`, using the procedure in
+[development](development.md#ota-updates). The rollback-enabled bootloader is
+vendored in `firmware/app/bootloader/` (esp-lan-ota `9b6df67`), but it has not
+yet run on either board.
+
+| Check | Board A (`39:ec:f4`) | Board B (`39:f4:14`) |
+| --- | --- | --- |
+| USB migration: new bootloader, OTA table, `ota_0`, `otadata` erased | Pending | Pending |
+| Both Home fabrics load after migration; saved intent restored; PCA `verify` passes | Pending | Pending |
+| Enrollment line printed on first boot; `esp-ota enroll` succeeds; Home still controls the lamp | Pending | Pending |
+| First `esp-ota push`: reboot to `ota_1`, intent restored, image confirms; `esp-ota status` shows image valid, rollback supported | Pending | Pending |
+| Optional: an image that never confirms rolls back after its 5-minute reset | Pending | Pending |
+
+Record the commit, image size, and console evidence for each step. Do not unpair
+either board or erase NVS to work around a failed migration.
 
 ## LED-connected observations and remaining checks
 

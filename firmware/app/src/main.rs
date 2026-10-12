@@ -4,6 +4,8 @@
 
 #[cfg(not(feature = "bench-light"))]
 compile_error!("This is a simulated bench image. Build with --features bench-light.");
+#[cfg(feature = "hardware-light")]
+compile_error!("The bench image never carries real output or the OTA cluster.");
 
 use esp_backtrace as _;
 use esp_hal::ram;
@@ -29,7 +31,18 @@ mod recovery;
 mod runtime;
 mod storage;
 
-esp_bootloader_esp_idf::esp_app_desc!();
+// A distinct project name: a lamp's OTA service refuses this image.
+esp_bootloader_esp_idf::esp_app_desc!(
+    env!("CARGO_PKG_VERSION"),
+    "key-right-bench",
+    esp_bootloader_esp_idf::BUILD_TIME,
+    esp_bootloader_esp_idf::BUILD_DATE,
+    esp_bootloader_esp_idf::ESP_IDF_COMPATIBLE_VERSION,
+    esp_bootloader_esp_idf::MMU_PAGE_SIZE,
+    0,
+    u16::MAX,
+    esp_bootloader_esp_idf::SECURE_VERSION
+);
 
 const HEAP_SIZE: usize = 100 * 1024;
 const RECLAIMED_RAM: usize =

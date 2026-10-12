@@ -12,6 +12,8 @@ pub mod light;
 pub mod network_scan;
 #[path = "../../src/network_tx.rs"]
 pub mod network_tx;
+#[path = "../../src/ota_health.rs"]
+pub mod ota_health;
 #[path = "../../src/presets.rs"]
 pub mod presets;
 #[path = "../../src/recovery.rs"]

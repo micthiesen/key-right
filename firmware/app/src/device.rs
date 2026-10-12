@@ -21,13 +21,27 @@ mod network;
 mod network_driver;
 mod network_scan;
 mod network_tx;
+mod ota;
+mod ota_health;
 mod output;
 mod presets;
 mod recovery;
 mod runtime;
 mod storage;
 
-esp_bootloader_esp_idf::esp_app_desc!();
+// esp-lan-ota accepts only images whose project name matches this one, so a
+// lamp refuses the simulated `key-right-bench` image.
+esp_bootloader_esp_idf::esp_app_desc!(
+    env!("CARGO_PKG_VERSION"),
+    "key-right",
+    esp_bootloader_esp_idf::BUILD_TIME,
+    esp_bootloader_esp_idf::BUILD_DATE,
+    esp_bootloader_esp_idf::ESP_IDF_COMPATIBLE_VERSION,
+    esp_bootloader_esp_idf::MMU_PAGE_SIZE,
+    0,
+    u16::MAX,
+    esp_bootloader_esp_idf::SECURE_VERSION
+);
 
 // Same split as the pinned SDK's persistent Wi-Fi example: reclaim RAM that
 // the second-stage bootloader no longer needs without reducing the radio heap.

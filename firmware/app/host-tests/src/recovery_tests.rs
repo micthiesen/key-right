@@ -1,3 +1,4 @@
+use crate::ota_health::{ota_verdict, OtaVerdict, OTA_CONFIRM_DEADLINE_MS, OTA_HEALTHY_MS};
 use crate::recovery::{
     usable_local_ipv6, AssociatedHealth, DriverErrors, LocalNetHealth, RestartBackoff,
 };
@@ -84,4 +85,41 @@ fn transport_restart_backoff_is_capped_and_only_healthy_operation_resets_it() {
     assert_eq!(backoff.next_delay_secs(120_000), 5);
     assert_eq!(backoff.next_delay_secs(0), 10);
     assert_eq!(backoff.next_delay_secs(600_000), 5);
+}
+
+#[test]
+fn updated_image_confirms_only_with_matter_network_and_output_evidence() {
+    let verified = || true;
+    assert_eq!(
+        ota_verdict(40_000, true, OTA_HEALTHY_MS, verified),
+        OtaVerdict::Confirm
+    );
+    // Late but healthy evidence still confirms rather than rolling back.
+    assert_eq!(
+        ota_verdict(OTA_CONFIRM_DEADLINE_MS, true, 600_000, verified),
+        OtaVerdict::Confirm
+    );
+    for (commissioned, healthy_ms) in [(false, 600_000), (true, OTA_HEALTHY_MS - 1)] {
+        assert_eq!(
+            ota_verdict(
+                OTA_CONFIRM_DEADLINE_MS - 1,
+                commissioned,
+                healthy_ms,
+                || { panic!("output readback waits for Matter and network evidence") }
+            ),
+            OtaVerdict::Wait
+        );
+        assert_eq!(
+            ota_verdict(OTA_CONFIRM_DEADLINE_MS, commissioned, healthy_ms, verified),
+            OtaVerdict::RollBack
+        );
+    }
+    assert_eq!(
+        ota_verdict(60_000, true, 600_000, || false),
+        OtaVerdict::Wait
+    );
+    assert_eq!(
+        ota_verdict(OTA_CONFIRM_DEADLINE_MS, true, 600_000, || false),
+        OtaVerdict::RollBack
+    );
 }
