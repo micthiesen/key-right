@@ -11,6 +11,7 @@ product goals.
 - `docs/research.md` and `docs/references/` hold observations and source evidence.
 - `docs/hardware.md` owns the minimum hardware plan and physical limits.
 - `docs/development.md` records build, flashing, console use, and coverage.
+- `hardware/SPEC.md` owns the planned v2 drop-in board; installed lamps are v1.
 - `firmware/core` is dependency-free `no_std` state and PCA9635 logic.
 - `firmware/cli` runs the core against an in-memory adapter.
 - `firmware/app` is the separate ESP32-C3 Matter workspace adapted from Stillair.

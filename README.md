@@ -53,6 +53,14 @@ the board takes power directly from the lamp's measured 3.37 V rail. With lamp
 wiring attached, USB must block VBUS/5 V while retaining data and ground.
 Ordinary powered USB requires disconnecting all five lamp wires first.
 
+## Hardware versions
+
+The installed lamps use **v1**: an off-the-shelf ESP32-C3 board hand-wired to
+the stock controller board, as described above. **v2** is a planned drop-in
+replacement for the whole stock board that switches the LED supply off in
+hardware to remove the off-glow. It is at the spec stage; see
+[hardware/](hardware/README.md).
+
 ## Develop
 
 ```sh
