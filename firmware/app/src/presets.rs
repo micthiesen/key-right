@@ -1,5 +1,5 @@
 //! One color-temperature light. Runtime owns durable intent and verified register state.
-use crate::runtime::{Hardware, OffEffect, Runtime};
+use crate::runtime::{Hardware, Runtime};
 use core::cell::Cell;
 use embassy_time::{Duration, Instant, Timer};
 use key_right_core::{ColorTemperature, Level, LightState};
@@ -55,7 +55,6 @@ pub struct LightHandler<'a, K, H> {
 #[derive(Clone, Copy)]
 struct SceneDraft {
     target: LightState,
-    duration_ms: u64,
     fields: u8,
 }
 pub(crate) struct ReportState {
@@ -115,7 +114,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
                 .get()
                 .filter(|_| !self.runtime.reported().is_ok_and(|state| state.on))
             {
-                self.runtime.set_level_transition(level, true, 0)?;
+                self.runtime.set_level_rate(level, true, 0)?;
             }
         } else {
             self.coupled_temperature.set(false);
@@ -179,7 +178,8 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         }
         Ok(())
     }
-    pub fn off_with_effect(&self, effect: OffEffect) -> Result<(), Error> {
+    /// Every Off effect turns off at once; fades are not used on this lamp.
+    pub fn off_with_effect(&self) -> Result<(), Error> {
         self.save_global_scene()?;
         self.changed();
         self.coupled_temperature.set(false);
@@ -187,7 +187,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         self.timed
             .set(self.off_wait.get() > 0 && self.off_wait.get() != u16::MAX);
         self.datavers[0].changed();
-        self.runtime.off_with_effect(effect)
+        self.runtime.set_power(false)
     }
     pub fn recall_global_scene(&self) -> Result<(), Error> {
         if self.global_scene.get() {
@@ -212,12 +212,12 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         }
         self.scene_draft.set(Some(SceneDraft {
             target: self.runtime.reported()?,
-            duration_ms: 0,
             fields: 0,
         }));
         Ok(())
     }
-    /// Validate every EFS before changing durable intent or hardware.
+    /// Validate every EFS before changing durable intent or hardware. The
+    /// scene's transition time is validated, then ignored: recall is instant.
     pub(crate) fn stage_scene(
         &self,
         cluster: u32,
@@ -228,7 +228,6 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         if duration_ms > 60_000_000 {
             return Err(ErrorCode::ConstraintError.into());
         }
-        draft.duration_ms = u64::from(duration_ms);
         for avp in avps.iter() {
             let avp = avp?;
             let id = avp.attribute_id()?;
@@ -279,7 +278,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         self.on_time.set(0);
         self.off_wait.set(0);
         self.timed.set(false);
-        if let Err(error) = self.runtime.recall_scene(draft.target, draft.duration_ms) {
+        if let Err(error) = self.runtime.request(draft.target) {
             self.changed();
             return Err(error);
         }
@@ -324,24 +323,26 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
                     .contains(color::OptionsBitmap::EXECUTE_IF_OFF)
             })
     }
+    /// MoveToLevel and Step apply at once; their transition time is ignored.
     pub fn level_to(
         &self,
         raw: u8,
         with_on_off: bool,
-        time_ds: Option<u16>,
         mask: level::OptionsBitmap,
         over: level::OptionsBitmap,
     ) -> Result<(), Error> {
-        self.level_to_curve(raw, with_on_off, time_ds, mask, over, false)
+        self.level_over(raw, with_on_off, 0, mask, over)
     }
-    fn level_to_curve(
+    /// `duration_ms` is non-zero only for Move, whose rate has no meaning
+    /// without a ramp: a held dimmer button would jump to a bound at once and
+    /// its Stop would do nothing.
+    fn level_over(
         &self,
         raw: u8,
         with_on_off: bool,
-        time_ds: Option<u16>,
+        duration_ms: u64,
         mask: level::OptionsBitmap,
         over: level::OptionsBitmap,
-        linear: bool,
     ) -> Result<(), Error> {
         if raw == 255 {
             return Err(ErrorCode::ConstraintError.into());
@@ -350,13 +351,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
             return Ok(());
         }
         self.changed();
-        let duration_ms = u64::from(time_ds.unwrap_or(0)) * 100;
-        if linear {
-            self.runtime.set_level_rate(raw, with_on_off, duration_ms)?;
-        } else {
-            self.runtime
-                .set_level_transition(raw, with_on_off, duration_ms)?;
-        }
+        self.runtime.set_level_rate(raw, with_on_off, duration_ms)?;
         let options =
             (self.level_options.get().bits() & !mask.bits()) | (over.bits() & mask.bits());
         self.coupled_temperature.set(false);
@@ -366,13 +361,8 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
                     * (ColorTemperature::MAX.get() - ColorTemperature::MIN.get())
                     / 253;
             let temperature = ColorTemperature::new(mireds).expect("bounded temperature");
-            if linear {
-                self.runtime
-                    .set_temperature_rate(temperature, duration_ms)?;
-            } else {
-                self.runtime
-                    .set_temperature_transition(temperature, duration_ms)?;
-            }
+            self.runtime
+                .set_temperature_rate(temperature, duration_ms)?;
             self.coupled_temperature.set(true);
         }
         if with_on_off && raw > Level::MIN.get() {
@@ -406,14 +396,13 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
                 }
             }
         };
-        let ds = (u16::from(current.abs_diff(target)) * 10).div_ceil(u16::from(rate));
-        self.level_to_curve(target, with_on_off, Some(ds), mask, over, true)
+        let ds = (u64::from(current.abs_diff(target)) * 10).div_ceil(u64::from(rate));
+        self.level_over(target, with_on_off, ds * 100, mask, over)
     }
     pub fn level_step(
         &self,
         mode: level::StepModeEnum,
         step: u8,
-        time_ds: Option<u16>,
         with_on_off: bool,
         mask: level::OptionsBitmap,
         over: level::OptionsBitmap,
@@ -426,7 +415,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
             level::StepModeEnum::Up => current.saturating_add(step).min(254),
             level::StepModeEnum::Down => current.saturating_sub(step).max(u8::from(!with_on_off)),
         };
-        self.level_to(target, with_on_off, time_ds, mask, over)
+        self.level_to(target, with_on_off, mask, over)
     }
     pub fn stop_level(
         &self,
@@ -434,8 +423,8 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         mask: level::OptionsBitmap,
         over: level::OptionsBitmap,
     ) -> Result<(), Error> {
-        // Target reporting already says Off during a fade to Off. Both Stop
-        // variants must still be able to freeze that in-progress transition.
+        // Target reporting already says Off during a Move down to Off. Both
+        // Stop variants must still be able to freeze that in-progress Move.
         if self.runtime.level_remaining_ms() != 0 || self.execute_level(with_on_off, mask, over)? {
             self.changed();
             self.runtime.stop_level_transition()?;
@@ -445,10 +434,10 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         }
         Ok(())
     }
+    /// MoveToColorTemperature and Step apply at once; transition time is ignored.
     pub fn color_to(
         &self,
         mireds: u16,
-        time_ds: u16,
         mask: color::OptionsBitmap,
         over: color::OptionsBitmap,
     ) -> Result<(), Error> {
@@ -461,8 +450,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         self.changed();
         self.coupled_temperature.set(false);
         let target = temperature(mireds);
-        self.runtime
-            .set_temperature_transition(target, u64::from(time_ds) * 100)
+        self.runtime.set_temperature(target)
     }
     pub fn color_move(
         &self,
@@ -499,7 +487,6 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
         &self,
         mode: color::StepModeEnum,
         step: u16,
-        time_ds: u16,
         bounds: (u16, u16),
         mask: color::OptionsBitmap,
         over: color::OptionsBitmap,
@@ -514,7 +501,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
             color::StepModeEnum::Down => current.saturating_sub(step),
         }
         .clamp(lo, hi);
-        self.color_to(target, time_ds, mask, over)
+        self.color_to(target, mask, over)
     }
     pub fn stop_color(
         &self,
@@ -544,7 +531,7 @@ impl<'a, K: KvBlobStoreAccess, H: Hardware> LightHandler<'a, K, H> {
             remaining: self.report_remaining(index),
         }
     }
-    /// Observe logical changes separately from the physical transition countdown.
+    /// Observe logical changes separately from the Move countdown.
     pub(crate) fn poll_report(
         &self,
         ctx: &impl AttrChangeNotifier,
@@ -682,14 +669,11 @@ impl<K: KvBlobStoreAccess, H: Hardware> on_off::ClusterAsyncHandler for LightHan
         _ctx: impl InvokeContext,
         r: on_off::OffWithEffectRequest<'_>,
     ) -> Result<(), Error> {
-        let effect = match (r.effect_identifier()?, r.effect_variant()?) {
-            (on_off::EffectIdentifierEnum::DelayedAllOff, 0) => OffEffect::FastFade,
-            (on_off::EffectIdentifierEnum::DelayedAllOff, 1) => OffEffect::NoFade,
-            (on_off::EffectIdentifierEnum::DelayedAllOff, 2) => OffEffect::SlowFade,
-            (on_off::EffectIdentifierEnum::DyingLight, 0) => OffEffect::DyingLight,
-            _ => return Err(ErrorCode::InvalidCommand.into()),
-        };
-        self.off_with_effect(effect)
+        match (r.effect_identifier()?, r.effect_variant()?) {
+            (on_off::EffectIdentifierEnum::DelayedAllOff, 0..=2)
+            | (on_off::EffectIdentifierEnum::DyingLight, 0) => self.off_with_effect(),
+            _ => Err(ErrorCode::InvalidCommand.into()),
+        }
     }
     async fn handle_on_with_recall_global_scene(
         &self,
@@ -778,13 +762,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> level::ClusterAsyncHandler for LightHand
         _ctx: impl InvokeContext,
         r: level::MoveToLevelRequest<'_>,
     ) -> Result<(), Error> {
-        self.level_to(
-            r.level()?,
-            false,
-            r.transition_time()?.into_option(),
-            r.options_mask()?,
-            r.options_override()?,
-        )
+        self.level_to(r.level()?, false, r.options_mask()?, r.options_override()?)
     }
     async fn handle_move(
         &self,
@@ -807,7 +785,6 @@ impl<K: KvBlobStoreAccess, H: Hardware> level::ClusterAsyncHandler for LightHand
         self.level_step(
             r.step_mode()?,
             r.step_size()?,
-            r.transition_time()?.into_option(),
             false,
             r.options_mask()?,
             r.options_override()?,
@@ -825,13 +802,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> level::ClusterAsyncHandler for LightHand
         _ctx: impl InvokeContext,
         r: level::MoveToLevelWithOnOffRequest<'_>,
     ) -> Result<(), Error> {
-        self.level_to(
-            r.level()?,
-            true,
-            r.transition_time()?.into_option(),
-            r.options_mask()?,
-            r.options_override()?,
-        )
+        self.level_to(r.level()?, true, r.options_mask()?, r.options_override()?)
     }
     async fn handle_move_with_on_off(
         &self,
@@ -854,7 +825,6 @@ impl<K: KvBlobStoreAccess, H: Hardware> level::ClusterAsyncHandler for LightHand
         self.level_step(
             r.step_mode()?,
             r.step_size()?,
-            r.transition_time()?.into_option(),
             true,
             r.options_mask()?,
             r.options_override()?,
@@ -968,7 +938,6 @@ impl<K: KvBlobStoreAccess, H: Hardware> color::ClusterAsyncHandler for LightHand
     ) -> Result<(), Error> {
         self.color_to(
             r.color_temperature_mireds()?,
-            r.transition_time()?,
             r.options_mask()?,
             r.options_override()?,
         )
@@ -997,7 +966,6 @@ impl<K: KvBlobStoreAccess, H: Hardware> color::ClusterAsyncHandler for LightHand
         self.color_step(
             r.step_mode()?,
             r.step_size()?,
-            r.transition_time()?,
             (
                 r.color_temperature_minimum_mireds()?,
                 r.color_temperature_maximum_mireds()?,
@@ -1141,7 +1109,7 @@ impl<K: KvBlobStoreAccess, H: Hardware, S: AsyncHandler> AsyncHandler
             let result = self.inner.invoke(ctx, reply).await;
             if stored && result.is_ok() {
                 // Captures use the same destination as the readable attributes.
-                // A later target change, not a fade frame, invalidates the scene.
+                // A later target change, not a Move frame, invalidates the scene.
                 self.light.scene_intent.set(None);
             }
             return result;

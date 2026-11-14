@@ -24,7 +24,8 @@ remain unverified.
 Firmware 0.1.5 adds Matter-delivered OTA updates through
 [esp-lan-ota](https://github.com/micthiesen/esp-lan-ota). Neither board has
 been migrated to it; see [OTA updates](#ota-updates). Firmware 0.1.6 adds the
-[Matter transport watchdog](#matter-transport-watchdog-016).
+[Matter transport watchdog](#matter-transport-watchdog-016). Firmware 0.1.7
+removes the fades: every change except a Matter Move applies at once.
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 
@@ -276,12 +277,12 @@ running image is unconfirmed. The real image fills about 95% of a `0x1F0000`
 slot, roughly 96 KiB of headroom. `flash.sh --check` reports the current
 figure.
 
-For the next planned opening, use the normal real image (0.1.6, Matter software
-version 7). This is each board's one-time OTA migration, described above. Retain
+For the next planned opening, use the normal real image (0.1.7, Matter software
+version 8). This is each board's one-time OTA migration, described above. Retain
 each board's NVS and existing Home membership, and follow the VBUS-blocked USB
 rule. No new commissioning or routine probing is needed.
-After update, verify On/Off, brightness and temperature fades visually, interrupt
-a fade with another setting, and check that Home holds its chosen targets.
+After update, check that On/Off, brightness and temperature changes from Home
+jump at once with no fade, and that Home holds its chosen targets.
 Check saved Off after a restart before closing up. The confirmed panel glow has
 a separate [electrical investigation plan](off-glow-investigation.md); the
 firmware update is not a demonstrated glow fix. The ESP indicator is ruled out.
@@ -368,13 +369,14 @@ python3 scripts/device.py --port PORT --log local/usb.log monitor
 reports intended and acknowledged state separately and marks physical output
 unmeasured. `level` accepts 1–254; `temperature` accepts 143–344 mired. Both
 retain the current power state. `on` restores that level and temperature.
-Healthy Matter attributes report the durable target during a transition;
+Healthy Matter attributes report the durable target during a Matter Move;
 `status` still exposes the separately acknowledged intermediate frame and its
 exact `acknowledged_stock_percent_numerator` over denominator 253, plus remaining
-transition times. This coordinate includes zero and sub-minimum fade output;
-the logical `acknowledged.level` alone cannot describe that region. Known
-output/storage faults remain read errors. A WithOnOff level command at minimum
-level 1 turns Off; ordinary level commands preserve an Off target during its fade.
+Move times. This coordinate includes zero and the sub-minimum output a Move down
+to Off passes through; the logical `acknowledged.level` alone cannot describe
+that region. Known output/storage faults remain read errors. A WithOnOff level
+command at minimum level 1 turns Off; ordinary level commands preserve an Off
+target during a Move down to Off.
 Legacy USB shortcuts `on 1` and `on 2` select level `57` at 303 and 200 mired
 respectively and turn on; these do not create extra Matter endpoints.
 One serialized state owner handles both Matter and console commands. Close a
@@ -382,22 +384,29 @@ monitor before issuing a command. The USB helper does not retry commands
 automatically; a timeout can mean a command executed, so read `status` before
 repeating it.
 
-Ordinary commands use 400 ms smoothstep easing, including zero-duration Home
-commands. Positive explicit durations are retained; rate-based Matter Move is
-linear. Power/level and temperature tracks are independent. The maintenance
-loop waits 20 ms between polls while timed On/Off counters retain their 100 ms
-units and reporting retains its existing cadence. Interrupted fades start at
-the last acknowledged output, not the target. Identical positional destinations
-retain their deadline; replacement Move rates take effect immediately.
-No interpolated frame is persisted or substituted into Home's
-target attributes.
+From 0.1.7 every command applies at once: On/Off, MoveToLevel, Step,
+MoveToColorTemperature, StepColorTemperature, scene recall and every
+OffWithEffect variant. TransitionTime fields, including a scene's, are accepted
+and ignored, so Home sees the final value and a RemainingTime of 0 right away.
+The 0.1.4–0.1.6 smoothstep fades were removed after Michael found they did not
+look good on the lamps.
+
+Rate-based Matter Move (level and colour temperature) still ramps linearly,
+because its rate is its meaning: a held dimmer button sends Move, then Stop
+on release. Applying it at once would jump to a bound and leave Stop nothing to
+do. Apple Home does not send Move, and any other command ends a running one.
+Power/level and temperature Move tracks are independent. The maintenance loop
+waits 20 ms between polls while timed On/Off counters retain their 100 ms units
+and reporting retains its existing cadence. A replacement Move starts at the
+last acknowledged output and takes effect immediately. No Move frame is
+persisted or substituted into Home's target attributes.
 
 Physical brightness uses a separate 0..2530 coordinate, where 253 is stock
 nominal 1% and 2530 is 10%. Settled On commands preserve the existing arithmetic
-and PWM bytes. Off fades to zero with its colour held; ExecuteIfOff setting
+and PWM bytes. A Move down to Off holds its colour; ExecuteIfOff setting
 changes only update memory. Stop rounds physical output to the nearest legal
 On level or Off (below half stock 1%); the temperature axis retains its own
-track. USB `off`, controlled reboot and fault shutdown bypass animation.
+track. USB `off`, controlled reboot and fault shutdown are immediate.
 PCA frames are read back at the exact physical coordinate. Equivalent quantized
 frames avoid redundant writes and OE transitions; unchanged frames skip I/O.
 
@@ -411,12 +420,12 @@ stored On/Toggle policies normalize to Restore. Version-3 records retain power,
 level and temperature. Version-2 preset migration retains saved power and the
 selected 303/200 mired temperature at level `57`, with the selected preset's
 explicit startup Off retained. Migration never erases commissioning.
-Valid saved On fades from verified zero over 400 ms; saved Off remains zero.
+Valid saved On is applied directly after verified zero; saved Off remains zero.
 OE release and stock zero-PWM initialization minimize output once the ESP runs;
 they do not prove darkness before boot or under connected-panel startup.
 
 Output faults invalidate acknowledgement, attempt Off, and retry durable intent
-after five seconds, fading valid On from verified zero; recovery does not
+after five seconds, restoring valid On directly from verified zero; recovery does not
 require a new On command. Invalid stored intent records report a fault and are
 retained until explicit local Off repairs them.
 No physical flash or operational pass is claimed by the software checks.
@@ -466,14 +475,14 @@ wedge without 15 minutes of continuous local network health in between resets
 the MCU. Wall time is not used, because a Wi-Fi outage after a restart is not
 evidence that the restart worked. The reset uses the same verified-zero,
 intent-preserving path as console `reboot`. It first waits up to 60 s for the
-saved record to hold the accepted target. A running fade does not delay it,
-because boot fades to the saved target. If saving never succeeds (a storage
+saved record to hold the accepted target. A running Move does not delay it,
+because the saved record already holds the Move's bound. If saving never succeeds (a storage
 fault holding an unsaved command), the transport restarts in place instead,
 and the next wedge tries again. Nothing limits how often a lamp that keeps
 wedging resets; `matter_wedges` and the log show it.
 
 Key Right differs from Stillair in three ways. A reset may happen while the
-lamp is On: the cost is a dark gap and a fade back to the saved state, while
+lamp is On: the cost is a short dark gap, then the saved setting at once, while
 the alternative is a light nobody can control. There is no 10-minute off-Wi-Fi
 rule: the 30-second radio deadlines and the 60-second association and IPv6
 checks already recreate a stuck connection. There is no `custom-halt`: the

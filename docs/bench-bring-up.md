@@ -99,10 +99,11 @@ The PCA address is `0x15`. Settled stock configuration is `MODE1 & 0x1f = 0`,
 16 PWM bytes zero. At level 57, warm/cool PWM is `6/2` at 303 mired and `3/6`
 at 200 mired. These are register expectations, not light measurements.
 
-Healthy Matter attributes report the final durable target while a fade runs;
-USB status retains the intermediate acknowledged frame separately. Known I/O
-faults remain errors. WithOnOff at minimum level 1 turns Off. An ordinary level
-command preserves an Off target even during an Off fade.
+From 0.1.7, power, brightness and temperature changes apply at once, with no
+fade. Only a Matter Move ramps, and healthy Matter attributes report its final
+durable target while USB status retains the intermediate acknowledged frame.
+Known I/O faults remain errors. WithOnOff at minimum level 1 turns Off. An
+ordinary level command preserves an Off target even during a Move down to Off.
 
 Record errors, resets or unexpected state. A console timeout can follow a
 command that executed, so read status before repeating it. A new PCA or power
@@ -165,7 +166,7 @@ an unreachable controller does, so Home control and mDNS answers stop. After
 about 90 s the log shows `Matter transport wedged`, `status` shows
 `matter_wedges=1`, and the transport restarts without a reset. Home control and
 the same intent return. Running it again within 15 minutes resets the MCU through
-verified zero, then restores saved state.
+verified zero, then comes straight back at the saved setting.
 
 `test watchdog` requires settled, verified output. It stalls the firmware task
 until the 15-second watchdog resets the MCU; the PCA retains its previous frame
@@ -181,8 +182,8 @@ then reconnect the panels during reassembly. Completed probing supports this
 step. Record connected-output results separately from register and unloaded
 voltage results.
 
-Observe power, low/middle/high brightness, warm/cool response, transitions and
-Off through Home. Check cold power-up and reset for unexpected flashes, then
+Observe power, low/middle/high brightness, warm/cool response and Off through
+Home; from 0.1.7 each change should jump at once with no fade. Check cold power-up and reset for unexpected flashes, then
 verify saved-state restoration and operation without USB. OE release and zero
 PWM minimize output once the ESP starts; they cannot guarantee darkness before
 it boots. Loaded startup has not yet been observed.

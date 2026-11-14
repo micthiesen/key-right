@@ -92,31 +92,36 @@ Retain brightness and temperature intent while off. The first-boot state is Off
 with level `57` and 303 mired (about 3300 K) ready for the next On command.
 
 Support Matter Groups and Scenes Management on that endpoint, including a
-16-entry scene table. Animate ordinary On, Off, level, temperature and scene
-changes over **400 ms using smoothstep easing**, including commands carrying a
-zero transition time. Honor positive explicit durations with the same easing;
-rate-based Move commands remain linear. Level/power and temperature tracks run
-independently on a 20 ms maintenance interval, subject to bus and executor time.
-Retarget from the last acknowledged physical frame. An identical positional
-destination must not keep postponing its deadline; a new Move rate replaces
-the active rate even when its endpoint is unchanged.
+16-entry scene table. From 0.1.7, On, Off, level, temperature, Step, scene
+recall and OffWithEffect apply at once. Every TransitionTime, including a
+scene's, is accepted and ignored, so RemainingTime stays 0. Michael tried the
+0.1.4 fades on the lamps and found they did not look good.
+
+The one exception is rate-based Move (level and colour temperature). It means
+"change at this rate until a bound or Stop", so it ramps linearly on a 20 ms
+maintenance interval, subject to bus and executor time. Without a ramp, a held
+dimmer button would jump straight to a bound and its Stop would do nothing.
+Apple Home does not send Move. A Move retargets from the last acknowledged
+physical frame, and a new Move rate replaces the active rate even when its
+endpoint is unchanged. Any other command ends a running Move at once.
 
 Physical brightness spans zero through stock nominal 10%, including the region
-below the normal 1% On floor. Off fades to true zero and then releases OE.
-Freeze the current colour while fading Off; commands that only update remembered
-Off settings must not brighten or recolour that fade. Persist the destination
-once, not each interpolated frame. Stop retains the nearest legal acknowledged
-setting for its axis; brightness below half stock 1% becomes Off, since no
-nonzero Matter level represents that region. Other level rounding is at most
-half a logical step. Scene recall saves all three target fields together.
+below the normal 1% On floor, which only a Move down to Off passes through.
+Off reaches true zero and then releases OE. A Move down to Off freezes the
+current colour; commands that only update remembered Off settings must not
+brighten or recolour it. Persist the destination once, not each Move frame.
+Stop retains the nearest legal acknowledged setting for its axis; brightness
+below half stock 1% becomes Off, since no nonzero Matter level represents that
+region. Other level rounding is at most half a logical step. Scene recall saves
+all three target fields together.
 
-Timed Off fades normally. OffWithEffect retains its requested effect timing and
-explicit NoFade variant. USB `off`, controlled reboot and storage/output-fault
-shutdown remain immediate. Effects and fade frames do not replace saved settings.
-Healthy Matter reads/reports expose the durable target immediately, keeping
-intermediate acknowledged frames separate in diagnostics. Failed output or
-storage does not become a successful target report. A level command without
-On/Off coupling cannot relight an Off target during its fade.
+OffWithEffect accepts every defined effect and variant, and each turns off at
+once. USB `off`, controlled reboot and storage/output-fault shutdown are
+immediate. Move frames do not replace saved settings. Healthy Matter
+reads/reports expose the durable target immediately, keeping intermediate
+acknowledged Move frames separate in diagnostics. Failed output or storage does
+not become a successful target report. A level command without On/Off coupling
+cannot relight an Off target during a Move down to Off.
 
 Support the full stock temperature command range, 143 through 344 mired. At the
 initial level `57`, 303 mired must reproduce warm/cool raw PCA values `6/2`, and
@@ -202,7 +207,7 @@ ESP, and no independent output cutoff.
   Never report a known failed write as successful actuation.
 - Preserve durable power, level, temperature, and Matter membership across
   ordinary restarts and flashes. Startup first releases OE and attempts stock
-  zero PWM, then fades validated saved On intent in over 400 ms. Missing intent
+  zero PWM, then applies validated saved On intent directly. Missing intent
   and saved Off stay Off.
   Retain explicit startup Off and startup level/temperature settings; reject
   new On/Toggle startup policies and migrate old On/Toggle to Restore.
@@ -234,7 +239,7 @@ ESP, and no independent output cutoff.
 - Keep I²C serialized with finite timeouts and explicit errors. On output failure,
   invalidate acknowledgement and attempt stock Off/OE release. Preserve intended
   state and the existing bounded recovery attempts that reinitialize, verify,
-  and fade valid On intent from verified zero. Recovery is not evidence of
+  and restore valid On intent from verified zero. Recovery is not evidence of
   physical Off during the fault. Verify exact physical-frame PWM, including
   sub-minimum brightness. Quantized-equivalent frames retain readback without
   redundant PWM writes or OE toggles; identical full frames need no I/O.
@@ -259,7 +264,7 @@ ESP, and no independent output cutoff.
   the saved record holds the accepted target (at most a 60-second wait;
   otherwise restart in place again). A reset is allowed while
   On: intent is restored on boot, while a wedged lamp could not be controlled
-  at all.
+  at all. From 0.1.7 the lamp comes straight back at its saved setting.
 
 PCA register semantics come from the
 [NXP datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf);
@@ -319,9 +324,9 @@ mapping, the level-57 regression points, single-light power/toggle/idempotent
 transitions, persistence migration, readback mismatch and bus failure, storage
 errors, startup policy, and recovery. Exercise standard Matter commands and
 reporting for the advertised level and temperature features.
-Cover zero endpoints, easing, independent axes, interrupted/reversed fades,
-linear Move, retained Off settings, unchanged Home targets, no per-frame flash
-writes, and zero-first restoration/recovery. Software checks do not establish
+Cover instant commands with zero RemainingTime, ignored transition times,
+linear Move and Stop, independent Move axes, retained Off settings, unchanged
+Home targets, no per-frame flash writes, and zero-first restoration/recovery. Software checks do not establish
 how smooth the 8-bit low-light steps look on the actual panels.
 Verify pin modes and target/flash-fit checks for the C3.
 

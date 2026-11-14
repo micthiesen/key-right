@@ -69,7 +69,8 @@ transport TX buffer held 90 s while associated restarts the transport; a
 repeat without 15 healthy minutes between resets via verified zero once the
 accepted target is saved, On or Off. Console `test matter` simulates it. The same pinned
 smoltcp/rs-matter wedge hit Stillair (b4318ca); `docs/development.md` owns it.
-Use 0.1.6 for each board's OTA migration flash.
+Firmware 0.1.7 (software version 8) removes the fades (below). Use 0.1.7 for
+each board's OTA migration flash; nothing newer than 0.1.4 is on a lamp yet.
 Firmware 0.1.5 (software version 6) adds OTA via esp-lan-ota, pinned at rev
 `5e214ee6aafe642cf1a1bbbe583bae95e460b4a1`, in the real `key-right` image only.
 Its cluster sits on light endpoint 1. The bench image has no OTA and the
@@ -115,22 +116,25 @@ At level 57, preserve raw warm/cool 6/2 at 303 mired and 3/6 at 200
 mired. These are command regressions, not optical calibration. Low output has
 eight-bit PCA quantization. Do not advertise RGB or Adaptive Lighting.
 
-Normal power/level/temperature/scene changes use 400 ms smoothstep easing for
-zero-duration commands; positive durations are honored and rate Move stays
-linear. Physical `OutputFrame` brightness spans true zero to stock 10%, separate
-from durable Matter 1..254 targets. Retarget from acknowledged frames; never
-persist or report intermediate frames as destinations. Off-setting changes
-cannot brighten/recolour a fade-out. USB Off, faults and service shutdown stay
-immediate. Boot/runtime fault recovery verifies zero before fading valid saved On.
+From 0.1.7 there are no fades: Michael tried them on the lamps and they did not
+look good. Power, level, temperature, Step, scene recall and OffWithEffect apply
+at once; TransitionTime is ignored and RemainingTime stays 0. Do not reintroduce
+easing. Only rate-based Matter Move ramps (linear, until a bound or Stop),
+because a held dimmer needs it; Home does not send Move. Physical `OutputFrame`
+brightness spans true zero to stock 10%, separate from durable Matter 1..254
+targets. Retarget a Move from acknowledged frames; never persist or report
+intermediate frames as destinations. Off-setting changes cannot brighten or
+recolour a Move down to Off. Boot/runtime fault recovery verifies zero, then
+applies valid saved On directly.
 
 Two physical lamps are two separately commissioned nodes grouped in Apple Home;
 firmware does not couple them or promise simultaneous output. The former
 3300 K/5000 K presets are optional Home scenes, not firmware endpoints. Preserve
 power, level, temperature, pairing, and startup intent across normal resets and
 flashes. Healthy Matter attributes report the durable command target during a
-fade; USB diagnostics retain the separate acknowledged intermediate frame.
+Move; USB diagnostics retain the separate acknowledged intermediate frame.
 Known storage/output faults remain errors. WithOnOff at minimum level 1 is Off;
-ordinary level commands cannot change an Off target back to On during its fade.
+ordinary level commands cannot change an Off target back to On during a Move.
 Keep intended, acknowledged, and measured physical output distinct.
 Network recovery must preserve intent and cannot be claimed from simulated tests.
 Both boards (`KR-88:56:a6:39:ec:f4` and `KR-88:56:a6:39:f4:14`) successfully

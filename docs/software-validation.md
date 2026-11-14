@@ -1,6 +1,30 @@
 # Software verification
 
-## 2026-11-13 Matter transport watchdog, 0.1.6
+## 2026-11-14 Instant changes, 0.1.7
+
+Basic Information software version is **8 / `0.1.7`**. Michael tried the
+0.1.4 fades on the lamps and found they did not look good, so every change now
+applies at once. That covers On/Off, MoveToLevel, Step, MoveToColorTemperature,
+StepColorTemperature, scene recall, every OffWithEffect variant, boot restore,
+fault recovery and the watchdog reset. TransitionTime is accepted and ignored,
+and RemainingTime stays 0. Rate-based Move still ramps linearly until its bound
+or Stop; see [development](development.md#console-and-matter-behavior). No
+dependency changed. 0.1.6 was never flashed; the bump distinguishes the two
+builds on the device and in Home.
+
+| Check | Result |
+| --- | --- |
+| `sh scripts/check.sh` | Formatting, strict Clippy, 34 core/CLI Rust tests, CLI simulation and 31 Python tests passed |
+| `sh scripts/check-firmware.sh` | Formatting, strict host/C3 Clippy, 94 application host tests, simulated/real/radio-diagnostic release builds and linked-stack checks passed |
+| `sh scripts/flash.sh --check` | Real image: 1,930,144 / 2,031,616 bytes of `ota_0`, 95.01%, 101,472 bytes of headroom; linked main-stack reservation 46,016 bytes |
+| `sh scripts/flash.sh --bench --check` | Simulated image: 1,892,816 / 2,031,616 bytes, 93.17%; linked main-stack reservation 47,992 bytes |
+
+The real image is 3,120 bytes smaller than 0.1.6. The fade tests were replaced
+by tests that check each command's frame, PWM and zero RemainingTime in the same
+call. Others cover OffWithEffect, scene recall, the boot and recovery restore
+(zero proven first, then the saved setting with no ramp), and the remaining Move
+ramp, Stop and Move down to Off. No board was connected, flashed or reset.
+
 
 Basic Information software version is **7 / `0.1.6`**. Both images sample the
 Matter transport TX buffer once a second. If it stays held for 90 s while
@@ -23,7 +47,7 @@ They also cover `reboot_ready`, which refuses while an accepted Off is unsaved
 and after `prepare_reboot`, but not during a fade. The async glue in
 `device_matter.rs` has no host test. No board was connected, flashed or reset.
 Hardware checks are pending in the
-[validation record](validation-record.md#matter-transport-watchdog-firmware-016-pending).
+[validation record](validation-record.md#matter-transport-watchdog-and-instant-changes-firmware-017-pending).
 
 ## 2026-10-12 OTA via esp-lan-ota, 0.1.5
 

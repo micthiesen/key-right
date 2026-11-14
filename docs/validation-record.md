@@ -23,8 +23,9 @@ visual fades, detailed loaded startup and long-outage recovery remain unverified
 Board B awaits its update. Firmware 0.1.5 adds OTA updates; neither board has
 been migrated to the OTA layout (see [OTA migration](#ota-migration-firmware-015-pending)).
 Firmware 0.1.6 adds a Matter transport watchdog after reported No Response
-drop-outs (see [Matter transport watchdog](#matter-transport-watchdog-firmware-016-pending));
-use 0.1.6 for the migration flash.
+drop-outs, and 0.1.7 removes the fades (see
+[0.1.7 checks](#matter-transport-watchdog-and-instant-changes-firmware-017-pending));
+use 0.1.7 for the migration flash.
 Detailed results and limits are recorded below.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
@@ -654,7 +655,7 @@ yet run on either board.
 Record the commit, image size, and console evidence for each step. Do not unpair
 either board or erase NVS to work around a failed migration.
 
-## Matter transport watchdog, firmware 0.1.6, pending
+## Matter transport watchdog and instant changes, firmware 0.1.7, pending
 
 **Report.** By 2026-11-13 Michael reported that Key Right had shown No Response
 in Apple Home a few times. Whether each case recovered by itself or after a power
@@ -688,11 +689,16 @@ controller. Not established: a wedge has never been captured on a lamp, and
 some drop-outs may be ordinary Wi-Fi outages or the existing transport
 restarts, which recover by themselves.
 
-| Check (0.1.6, commissioned board, USB console) | Board A | Board B |
+Firmware 0.1.7 also removes the fades: Michael tried the 0.1.4 transitions on
+the lamps and found they did not look good. Every change except a Matter Move
+now applies at once, including after the watchdog's reset.
+
+| Check (0.1.7, commissioned board, USB console) | Board A | Board B |
 | --- | --- | --- |
-| `status` shows `firmware=0.1.6` and `matter_wedges=0` after the flash; Home shows software version 7 | Pending | Pending |
+| `status` shows `firmware=0.1.7` and `matter_wedges=0` after the flash; Home shows software version 8 | Pending | Pending |
+| From Home, On, Off, a brightness change (for example 20% to 80%) and a colour-temperature change each jump at once with no visible fade; Home shows the new value at once | Pending | Pending |
 | `test matter` with the lamp On: within about 95 s the log shows `Matter transport wedged`, no reset; Home control returns with the same intent; `matter_wedges=1` | Pending | Pending |
-| `test matter` again within 15 minutes: the log shows the reset line; the lamp returns to the same saved state; both fabrics load | Pending | Pending |
+| `test matter` again within 15 minutes: the log shows the reset line; after a short dark gap the lamp comes straight back at its saved setting with no fade-in; both fabrics load | Pending | Pending |
 | Long-term: no No Response that needs a power cycle; record any `matter_wedges` above 0 found in `status` | Pending | Pending |
 
 
@@ -758,12 +764,13 @@ LEDs cannot establish the remaining loaded checks below.
 | USB removed, ordinary lamp-powered operation | Pending |
 
 Firmware 0.1.4 adds 400 ms eased physical transitions, true-zero fade endpoints,
-and separate target reporting. It is now installed on board A, with register
-and saved-Off reboot checks passed, but its fades have not been visually checked
-on the panels. Software results belong in
-[software validation](software-validation.md). Specific visual checks of fades,
-target display and saved-Off reboot remain separate from the general report of
-successful operation and the glow trial. Board B awaits its requested update.
+and separate target reporting. It is installed on board A, with register and
+saved-Off reboot checks passed. Firmware 0.1.7 removes the fades again, so they
+no longer need a visual check; the instant-change check is in the 0.1.7 table
+above. Software results belong in
+[software validation](software-validation.md). Target display and saved-Off
+reboot checks remain separate from the general report of successful operation
+and the glow trial. Board B awaits its requested update.
 Routine meter probing remains complete. Eight-bit PWM can still produce visible
 steps near minimum output.
 

@@ -1,5 +1,7 @@
-//! Durable light targets, independent transitions, and acknowledged PCA state.
-//! Persist destinations once; interpolated frames never write flash.
+//! Durable light targets, rate moves, and acknowledged PCA state.
+//! Every command applies at once except Matter's rate-based Move, which ramps
+//! linearly until its bound or a Stop. Persist destinations once; intermediate
+//! Move frames never write flash.
 use core::cell::{Cell, RefCell};
 use key_right_core::{
     ColorTemperature, Command, Controller, Level, LightOutput, LightState, OutputBrightness,
@@ -10,10 +12,8 @@ use rs_matter_embassy::matter::error::{Error, ErrorCode};
 use rs_matter_embassy::matter::persist::{KvBlobStoreAccess, VENDOR_KEYS_START};
 
 pub const INTENT_KEY: u16 = VENDOR_KEYS_START + 3;
-// Scenes Management supports longer transitions than Level/Color commands.
+// Bounds a computed Move duration; Level/Color rates stay far below it.
 const MAX_TRANSITION_MS: u64 = 60_000_000;
-/// Local presentation policy, including zero-duration commands from Home.
-pub const DEFAULT_TRANSITION_MS: u64 = 400;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OutputError {
@@ -38,17 +38,17 @@ pub enum Fault {
 }
 #[derive(Clone, Copy, Debug)]
 pub struct Snapshot {
-    /// Final durable destination, which may differ from an in-progress fade.
+    /// Final durable destination, which may differ from an in-progress Move.
     pub intended: LightState,
     /// Last readback-acknowledged frame, not an optical measurement.
     pub applied: Option<LightState>,
-    /// Exact acknowledged physical coordinate, including fades below Level::MIN.
+    /// Exact acknowledged physical coordinate, including Moves below Level::MIN.
     pub applied_frame: Option<OutputFrame>,
     pub fault: Fault,
     pub output_failures: u32,
     pub storage_failures: u32,
     pub recoveries: u32,
-    /// Logical attributes or output availability changed; excludes fade frames.
+    /// Logical attributes or output availability changed; excludes Move frames.
     pub revision: u32,
 }
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -57,18 +57,14 @@ struct Startup {
     level: Option<u8>,
     temperature: Option<ColorTemperature>,
 }
+/// A linear Move ramp. Nothing else animates: fades looked poor on the lamps,
+/// so transition times are accepted and ignored.
 #[derive(Clone, Copy)]
 struct Transition {
     from: u16,
     to: u16,
     start: u64,
     duration: u64,
-    curve: Curve,
-}
-#[derive(Clone, Copy)]
-enum Curve {
-    Smooth,
-    Linear,
 }
 impl Transition {
     fn value(self, now: u64) -> u16 {
@@ -76,16 +72,10 @@ impl Transition {
         if self.duration == 0 || elapsed == self.duration {
             return self.to;
         }
-        // Fixed-point smoothstep has zero endpoint velocity and cannot overshoot.
         // Bound duration before construction; Q16 products fit comfortably in u64.
         const ONE: u64 = 65_536;
         let x = elapsed * ONE / self.duration;
-        let fraction = match self.curve {
-            Curve::Linear => x,
-            Curve::Smooth => x * x * (3 * ONE - 2 * x) / (ONE * ONE),
-        };
-        (i64::from(self.from)
-            + (i64::from(self.to) - i64::from(self.from)) * fraction as i64 / ONE as i64)
+        (i64::from(self.from) + (i64::from(self.to) - i64::from(self.from)) * x as i64 / ONE as i64)
             as u16
     }
     fn remaining(self, now: u64) -> u64 {
@@ -95,28 +85,16 @@ impl Transition {
 #[derive(Clone, Copy)]
 struct LevelTransition {
     ramp: Transition,
-    then: Option<Transition>,
-    /// Freeze colour during fade-out even if remembered settings change while Off.
+    /// Freeze colour during a Move down to Off even if remembered settings change.
     off_temperature: Option<ColorTemperature>,
 }
 impl LevelTransition {
     fn value(self, now: u64) -> u16 {
-        self.then
-            .filter(|next| now >= next.start)
-            .unwrap_or(self.ramp)
-            .value(now)
+        self.ramp.value(now)
     }
     fn remaining(self, now: u64) -> u64 {
-        let last = self.then.unwrap_or(self.ramp);
-        last.start.saturating_add(last.duration).saturating_sub(now)
+        self.ramp.remaining(now)
     }
-}
-#[derive(Clone, Copy, Debug)]
-pub enum OffEffect {
-    FastFade,
-    NoFade,
-    SlowFade,
-    DyingLight,
 }
 struct State<H> {
     target: LightState,
@@ -292,7 +270,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
             .ok_or_else(|| ErrorCode::InvalidState.into())
     }
     /// Accepted destination for controllers, while the output adapter is healthy.
-    /// Fade frames remain available separately through `acknowledged` and `snapshot`.
+    /// Move frames remain available separately through `acknowledged` and `snapshot`.
     pub fn reported(&self) -> Result<LightState, Error> {
         let s = self.state.borrow();
         if s.fault != Fault::None || s.controller.applied().is_none() {
@@ -309,7 +287,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         verified
     }
     /// A recovery reset now loses no accepted command: the saved record holds
-    /// the target. Fades need not finish, because boot fades to that target.
+    /// the target. A running Move need not finish; boot applies its bound.
     pub fn reboot_ready(&self) -> bool {
         let s = self.state.borrow();
         !s.dirty && s.fault != Fault::Rebooting
@@ -444,22 +422,12 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         let was_unknown = s.controller.applied_frame().is_none();
         if was_unknown {
             // Never start from an assumed physical frame. Boot and fault recovery
-            // first prove zero, then ease valid On intent back in from that zero.
+            // first prove zero, then apply valid On intent directly.
             if s.hardware.shutdown().is_err() {
                 Self::output_failed(s, now);
                 return Err(ErrorCode::Failure.into());
             }
-            s.level_transition = s.target.on.then_some(LevelTransition {
-                ramp: Transition {
-                    from: 0,
-                    to: OutputBrightness::from_level(s.target.level).get(),
-                    start: now,
-                    duration: DEFAULT_TRANSITION_MS,
-                    curve: Curve::Smooth,
-                },
-                then: None,
-                off_temperature: None,
-            });
+            s.level_transition = None;
             s.temperature_transition = None;
         }
         let effective = Self::effective(s, now);
@@ -483,7 +451,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         s.retry_at = 0;
         if previous != s.controller.applied_frame() {
             s.next_verify = now.saturating_add(5_000);
-            // Controllers report the destination, not each acknowledged fade frame.
+            // Controllers report the destination, not each acknowledged Move frame.
             // Becoming available again still changes their readable attributes.
             if previous.is_none() {
                 s.revision = s.revision.wrapping_add(1);
@@ -506,48 +474,14 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         self.save_intent(s)?;
         Self::reconcile(s, self.now.get())
     }
+    /// Apply one validated destination at once, ending any Move. Scene
+    /// recalls use this too; their transition time is ignored.
     pub fn request(&self, target: LightState) -> Result<(), Error> {
-        self.recall_scene(target, 0)
-    }
-    /// Commit a validated scene as one durable destination before any output.
-    pub fn recall_scene(&self, target: LightState, duration_ms: u64) -> Result<(), Error> {
-        if duration_ms > MAX_TRANSITION_MS {
-            return Err(ErrorCode::ConstraintError.into());
-        }
         let mut s = self.state.borrow_mut();
         Self::writable(&s)?;
-        if target == s.target {
-            return self.commit(&mut s, target);
-        }
-        let current = Self::current_frame(&s);
-        let duration_ms = Self::duration(duration_ms);
-        let animate = current.brightness != OutputBrightness::ZERO || target.on;
-        s.level_transition = animate.then_some(LevelTransition {
-            ramp: Transition {
-                from: current.brightness.get(),
-                to: OutputFrame::from_state(target).brightness.get(),
-                start: self.now.get(),
-                duration: duration_ms,
-                curve: Curve::Smooth,
-            },
-            then: None,
-            off_temperature: (!target.on).then_some(current.state.temperature),
-        });
-        s.temperature_transition = (animate && target.on).then_some(Transition {
-            from: current.state.temperature.get(),
-            to: target.temperature.get(),
-            start: self.now.get(),
-            duration: duration_ms,
-            curve: Curve::Smooth,
-        });
+        s.level_transition = None;
+        s.temperature_transition = None;
         self.commit(&mut s, target)
-    }
-    fn duration(requested: u64) -> u64 {
-        if requested == 0 {
-            DEFAULT_TRANSITION_MS
-        } else {
-            requested
-        }
     }
     fn current_frame(s: &State<H>) -> OutputFrame {
         s.controller.applied_frame().unwrap_or_else(|| {
@@ -561,107 +495,27 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         let mut s = self.state.borrow_mut();
         Self::writable(&s)?;
         let target = LightState { on, ..s.target };
-        if on != s.target.on {
-            let current = Self::current_frame(&s);
-            s.level_transition = Some(LevelTransition {
-                ramp: Transition {
-                    from: current.brightness.get(),
-                    to: OutputFrame::from_state(target).brightness.get(),
-                    start: self.now.get(),
-                    duration: DEFAULT_TRANSITION_MS,
-                    curve: Curve::Smooth,
-                },
-                then: None,
-                off_temperature: (!on).then_some(current.state.temperature),
-            });
-            if !on {
-                s.temperature_transition = None;
-            } else if current.state.temperature != target.temperature {
-                s.temperature_transition = Some(Transition {
-                    from: current.state.temperature.get(),
-                    to: target.temperature.get(),
-                    start: self.now.get(),
-                    duration: DEFAULT_TRANSITION_MS,
-                    curve: Curve::Smooth,
-                });
-            }
+        // Off always lands at once, even during a Move down to Off. A repeated
+        // On keeps a running Move, which Matter allows.
+        if on != s.target.on || !on {
+            s.level_transition = None;
+            s.temperature_transition = None;
         }
         self.commit(&mut s, target)
     }
     pub fn set_level(&self, level: Level, with_on_off: bool) -> Result<(), Error> {
-        self.set_level_transition(level.get(), with_on_off, 0)
-    }
-    /// Effect frames are transient; the durable Off target retains its level.
-    pub fn off_with_effect(&self, effect: OffEffect) -> Result<(), Error> {
-        let mut s = self.state.borrow_mut();
-        Self::writable(&s)?;
-        let current = Self::current_frame(&s);
-        let start = self.now.get();
-        let from = current.brightness.get();
-        // Percentage effects use physical output, including the sub-minimum
-        // tail. Rounding through a Matter level could brighten a fade to Off.
-        let (middle, first_ms, last_ms) = match effect {
-            OffEffect::FastFade => (0, 800, 0),
-            OffEffect::NoFade => (0, 0, 0),
-            OffEffect::SlowFade => (from / 2, 800, 12_000),
-            OffEffect::DyingLight => ((from * 6 / 5).min(OutputBrightness::MAX.get()), 500, 1_000),
-        };
-        s.level_transition = (current.brightness != OutputBrightness::ZERO && first_ms != 0)
-            .then_some(LevelTransition {
-                ramp: Transition {
-                    from: current.brightness.get(),
-                    to: middle,
-                    start,
-                    duration: first_ms,
-                    curve: Curve::Smooth,
-                },
-                then: (last_ms != 0).then_some(Transition {
-                    from: middle,
-                    to: 0,
-                    start: start + first_ms,
-                    duration: last_ms,
-                    curve: Curve::Smooth,
-                }),
-                off_temperature: Some(current.state.temperature),
-            });
-        s.temperature_transition = None;
-        let target = LightState {
-            on: false,
-            ..s.target
-        };
-        self.commit(&mut s, target)
+        self.set_level_rate(level.get(), with_on_off, 0)
     }
     pub fn set_temperature(&self, temperature: ColorTemperature) -> Result<(), Error> {
-        self.set_temperature_transition(temperature, 0)
+        self.set_temperature_rate(temperature, 0)
     }
-    pub fn set_level_transition(
-        &self,
-        level: u8,
-        with_on_off: bool,
-        duration_ms: u64,
-    ) -> Result<(), Error> {
-        self.level_transition(
-            level,
-            with_on_off,
-            Self::duration(duration_ms),
-            Curve::Smooth,
-        )
-    }
-    /// Matter Move specifies a rate, so keep its ramp linear.
+    /// A Matter Move: ramp linearly to `level` over `duration_ms`. Zero
+    /// applies at once, as every other level command does.
     pub fn set_level_rate(
         &self,
         level: u8,
         with_on_off: bool,
         duration_ms: u64,
-    ) -> Result<(), Error> {
-        self.level_transition(level, with_on_off, duration_ms, Curve::Linear)
-    }
-    fn level_transition(
-        &self,
-        level: u8,
-        with_on_off: bool,
-        duration_ms: u64,
-        curve: Curve,
     ) -> Result<(), Error> {
         if level == 255 || duration_ms > MAX_TRANSITION_MS {
             return Err(ErrorCode::ConstraintError.into());
@@ -679,12 +533,8 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
             ..s.target
         };
         // ExecuteIfOff only changes remembered settings. In particular, it
-        // cannot restart a fade-out or raise its remaining physical output.
-        // A rate command may replace an existing rate/curve toward the same
-        // endpoint. Only identical positional targets preserve their deadline.
-        if (target == s.target && matches!(curve, Curve::Smooth))
-            || (!target.on && !s.target.on && !with_on_off)
-        {
+        // cannot restart a Move down to Off or raise its remaining output.
+        if !target.on && !s.target.on && !with_on_off {
             return self.commit(&mut s, target);
         }
         let animate =
@@ -695,43 +545,20 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
                 to: OutputFrame::from_state(target).brightness.get(),
                 start: self.now.get(),
                 duration: duration_ms,
-                curve,
             },
-            then: None,
             off_temperature: (!target.on).then_some(current.state.temperature),
         });
-        if !target.on {
+        // Turning on, or off, shows the remembered temperature at once.
+        if !target.on || !s.target.on {
             s.temperature_transition = None;
-        } else if !s.target.on && current.state.temperature != target.temperature {
-            s.temperature_transition = Some(Transition {
-                from: current.state.temperature.get(),
-                to: target.temperature.get(),
-                start: self.now.get(),
-                duration: duration_ms,
-                curve,
-            });
         }
         self.commit(&mut s, target)
     }
-    pub fn set_temperature_transition(
-        &self,
-        temperature: ColorTemperature,
-        duration_ms: u64,
-    ) -> Result<(), Error> {
-        self.temperature_transition(temperature, Self::duration(duration_ms), Curve::Smooth)
-    }
+    /// A Matter Move of colour temperature; zero applies at once.
     pub fn set_temperature_rate(
         &self,
         temperature: ColorTemperature,
         duration_ms: u64,
-    ) -> Result<(), Error> {
-        self.temperature_transition(temperature, duration_ms, Curve::Linear)
-    }
-    fn temperature_transition(
-        &self,
-        temperature: ColorTemperature,
-        duration_ms: u64,
-        curve: Curve,
     ) -> Result<(), Error> {
         if duration_ms > MAX_TRANSITION_MS {
             return Err(ErrorCode::ConstraintError.into());
@@ -739,13 +566,12 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         let mut s = self.state.borrow_mut();
         Self::writable(&s)?;
         let current = Self::current_frame(&s);
-        if s.target.on && (temperature != s.target.temperature || matches!(curve, Curve::Linear)) {
+        if s.target.on {
             s.temperature_transition = (duration_ms != 0).then_some(Transition {
                 from: current.state.temperature.get(),
                 to: temperature.get(),
                 start: self.now.get(),
                 duration: duration_ms,
-                curve,
             });
         }
         let target = LightState {
@@ -778,7 +604,7 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
             .ok_or(ErrorCode::InvalidState)?;
         let stopped = s.level_transition.take().expect("active level transition");
         // Stop must store a representable state. Choose the nearest legal
-        // level or Off in the sub-minimum tail of a power fade. This bounds
+        // level or Off in the sub-minimum tail of a Move down to Off. This bounds
         // the correction to half stock 1% rather than jumping dark to On.
         let target = LightState {
             level: applied.brightness.to_level_clamped(),

@@ -24,16 +24,17 @@ Whether it disappears after longer Off is unknown. Its electrical cause remains
 under [investigation](docs/off-glow-investigation.md); zero PWM does not establish
 optical darkness.
 
-Board A runs **0.1.4**; board B remains on **0.1.3**. Version 0.1.4 adds
-400 ms eased power, brightness and temperature transitions while Home continues
-to report selected targets immediately. Output-frame fades reach zero;
-intermediate frames never write flash. Visual fades and detailed loaded startup
-remain unverified. Low-output steps remain limited by the PCA's 8-bit resolution.
+Board A runs **0.1.4**; board B remains on **0.1.3**. Version 0.1.4 added
+400 ms eased transitions; 0.1.7 removes them because they did not look good on
+the lamps. From 0.1.7 every power, brightness and temperature change applies at
+once, and Home shows the final value right away. Detailed loaded startup
+remains unverified. Low-output steps remain limited by the PCA's 8-bit resolution.
 Firmware 0.1.5 adds Matter-delivered OTA updates with bootloader rollback. It
 requires one USB migration per board, and neither board has had it yet. See
 [development](docs/development.md#ota-updates). Firmware 0.1.6 restarts the
 Matter transport, and resets if needed, when the stack stops sending while
-Wi-Fi stays up, a cause of Home's No Response.
+Wi-Fi stays up, a cause of Home's No Response. Neither 0.1.6 nor 0.1.7 is on a
+lamp yet; use 0.1.7 for the migration flash.
 The [validation record](docs/validation-record.md) separates installed-image
 results, user observations and remaining checks.
 

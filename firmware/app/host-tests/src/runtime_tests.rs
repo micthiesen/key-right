@@ -115,9 +115,8 @@ fn reported_destination_is_stable_while_acknowledged_frames_change() {
     assert!(r.reported().is_err());
     r.tick(0);
     r.set_power(true).unwrap();
-    r.set_level_transition(254, false, 2000).unwrap();
-    r.set_temperature_transition(ColorTemperature::MIN, 2000)
-        .unwrap();
+    r.set_level_rate(254, false, 2000).unwrap();
+    r.set_temperature_rate(ColorTemperature::MIN, 2000).unwrap();
     let target = r.snapshot().intended;
     let revision = r.snapshot().revision;
     assert_eq!(r.reported().unwrap(), target);
@@ -146,10 +145,8 @@ fn reported_targets_remain_unavailable_after_failed_storage_output_or_reboot() {
     assert!(r.reported().unwrap().on);
     r.tick(5400);
     h.fail_output.set(true);
-    r.set_power(false).unwrap();
-    // Starting the fade retains the last frame; the next changed frame
-    // detects the injected I/O failure and invalidates reported attributes.
-    r.tick(5420);
+    // Off applies in the same call, so the failed write surfaces at once.
+    assert!(r.set_power(false).is_err());
     assert!(r.reported().is_err());
     h.fail_output.set(false);
     r.tick(10420);
@@ -191,10 +188,13 @@ fn absent_pca_preserves_commands_for_bounded_recovery() {
     h.fail_output.set(false);
     r.tick(4999);
     assert!(r.acknowledged().is_err());
+    h.events.borrow_mut().clear();
     r.tick(5000);
-    assert!(!r.acknowledged().unwrap().on);
-    r.tick(5400);
+    // Recovery proves zero, then restores the saved On directly, with no fade.
+    assert_eq!(h.events.borrow()[0], "off");
+    assert!(h.events.borrow()[1].starts_with("apply:"));
     assert!(r.acknowledged().unwrap().on);
+    assert_eq!(r.level_remaining_ms(), 0);
 }
 
 #[test]
@@ -210,8 +210,6 @@ fn failed_save_never_applies_pending_on_and_retries_it() {
     r.tick(4999);
     assert!(r.acknowledged().is_err());
     r.tick(5000);
-    assert!(!r.acknowledged().unwrap().on);
-    r.tick(5400);
     assert!(r.acknowledged().unwrap().on);
 }
 
@@ -247,8 +245,6 @@ fn periodic_readback_failure_marks_unknown_then_restores_all_settings() {
     r.tick(10399);
     assert!(r.acknowledged().is_err());
     r.tick(10400);
-    assert!(!r.acknowledged().unwrap().on);
-    r.tick(10800);
     assert_eq!(r.acknowledged().unwrap(), intended);
     assert_eq!(r.snapshot().recoveries, 1);
 }
@@ -320,8 +316,6 @@ fn transient_read_failure_retries_and_applies_startup_only_once() {
     assert_eq!(r.snapshot().storage_failures, 2);
     h.fail_load.set(false);
     r.tick(10000);
-    assert!(!r.acknowledged().unwrap().on);
-    r.tick(10400);
     assert!(r.acknowledged().unwrap().on);
     r.tick(15000);
     assert!(r.acknowledged().unwrap().on);
@@ -403,14 +397,13 @@ fn startup_settings_are_atomic_durable_and_do_not_change_live_output() {
 }
 
 #[test]
-fn independent_fades_persist_destinations_not_intermediate_frames() {
+fn independent_moves_persist_destinations_not_intermediate_frames() {
     let (h, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
     r.tick(400);
-    r.set_level_transition(254, false, 2000).unwrap();
-    r.set_temperature_transition(ColorTemperature::MIN, 1000)
-        .unwrap();
+    r.set_level_rate(254, false, 2000).unwrap();
+    r.set_temperature_rate(ColorTemperature::MIN, 1000).unwrap();
     h.events.borrow_mut().clear();
     r.tick(900);
     let half = r.acknowledged().unwrap();
@@ -433,13 +426,12 @@ fn independent_fades_persist_destinations_not_intermediate_frames() {
 }
 
 #[test]
-fn stopped_fade_is_durable_and_does_not_stop_other_axis() {
+fn stopped_move_is_durable_and_does_not_stop_other_axis() {
     let (h, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
-    r.set_level_transition(254, false, 2000).unwrap();
-    r.set_temperature_transition(ColorTemperature::MIN, 2000)
-        .unwrap();
+    r.set_level_rate(254, false, 2000).unwrap();
+    r.set_temperature_rate(ColorTemperature::MIN, 2000).unwrap();
     r.tick(500);
     let level = r.acknowledged().unwrap().level;
     r.stop_level_transition().unwrap();
@@ -453,17 +445,17 @@ fn stopped_fade_is_durable_and_does_not_stop_other_axis() {
 }
 
 #[test]
-fn fade_to_off_and_immediate_off_never_relight_from_a_pending_track() {
+fn move_to_off_and_immediate_off_never_relight_from_a_pending_track() {
     let (_, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
     r.tick(400);
-    r.set_level_transition(0, true, 1000).unwrap();
+    r.set_level_rate(0, true, 1000).unwrap();
     r.tick(900);
     assert!(r.acknowledged().unwrap().on);
     r.tick(1400);
     assert!(!r.acknowledged().unwrap().on);
-    r.set_level_transition(254, true, 2000).unwrap();
+    r.set_level_rate(254, true, 2000).unwrap();
     r.tick(1900);
     r.off().unwrap();
     r.tick(4000);
@@ -485,18 +477,16 @@ fn out_of_band_settings_while_off_do_not_energize_output() {
 }
 
 #[test]
-fn failed_fade_recovers_to_its_durable_destination() {
+fn failed_move_recovers_directly_to_its_durable_destination() {
     let (h, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
-    r.set_level_transition(254, false, 1000).unwrap();
+    r.set_level_rate(254, false, 1000).unwrap();
     h.fail_output.set(true);
     r.tick(500);
     assert!(r.acknowledged().is_err());
     h.fail_output.set(false);
     r.tick(5500);
-    assert!(!r.acknowledged().unwrap().on);
-    r.tick(5900);
     assert_eq!(r.acknowledged().unwrap().level, Level::MAX);
     assert_eq!(r.level_remaining_ms(), 0);
 }
@@ -537,7 +527,7 @@ fn watchdog_test_requires_settled_verified_output_without_changing_it() {
     assert_eq!(h.actual.get(), state);
     assert_eq!(*h.records.borrow(), records);
     assert!(h.events.borrow().is_empty());
-    r.set_level_transition(254, false, 1000).unwrap();
+    r.set_level_rate(254, false, 1000).unwrap();
     assert!(r.watchdog_test_ready().is_err());
     r.tick(1400);
     h.fail_output.set(true);
@@ -555,13 +545,12 @@ fn failed_diagnostic_read_invalidates_acknowledgement() {
 }
 
 #[test]
-fn repeated_on_preserves_both_fades_and_successful_recovery_clears_backoff() {
+fn repeated_on_preserves_both_moves_and_successful_recovery_clears_backoff() {
     let (h, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
-    r.set_level_transition(254, false, 2000).unwrap();
-    r.set_temperature_transition(ColorTemperature::MIN, 2000)
-        .unwrap();
+    r.set_level_rate(254, false, 2000).unwrap();
+    r.set_temperature_rate(ColorTemperature::MIN, 2000).unwrap();
     r.tick(500);
     let intermediate = r.acknowledged().unwrap();
     r.set_power(true).unwrap();
@@ -573,28 +562,23 @@ fn repeated_on_preserves_both_fades_and_successful_recovery_clears_backoff() {
     assert!(r.acknowledged().is_err());
     h.fail_output.set(false);
     r.set_power(true).unwrap();
-    let recovered = r.acknowledged().unwrap();
-    assert!(!recovered.on);
-    assert_eq!(recovered.temperature, ColorTemperature::MIN);
-    r.tick(1500);
-    assert!(r.acknowledged().unwrap().level > recovered.level);
-    assert_eq!(r.acknowledged().unwrap().temperature, recovered.temperature);
-    r.tick(2000);
+    // Recovery goes straight to the Move's destination; it does not resume it.
     assert_eq!(r.acknowledged().unwrap().level, Level::MAX);
     assert_eq!(r.acknowledged().unwrap().temperature, ColorTemperature::MIN);
+    assert_eq!(r.level_remaining_ms(), 0);
 }
 
 #[test]
-fn scene_duration_limit_is_supported_and_out_of_range_rejected_without_mutation() {
+fn move_duration_limit_is_supported_and_out_of_range_rejected_without_mutation() {
     let (_, r) = rig();
     r.tick(0);
     r.set_power(true).unwrap();
-    r.set_level_transition(254, false, 60_000_000).unwrap();
-    r.set_temperature_transition(ColorTemperature::MIN, 60_000_000)
+    r.set_level_rate(254, false, 60_000_000).unwrap();
+    r.set_temperature_rate(ColorTemperature::MIN, 60_000_000)
         .unwrap();
-    assert!(r.set_level_transition(1, false, 60_000_001).is_err());
+    assert!(r.set_level_rate(1, false, 60_000_001).is_err());
     assert!(r
-        .set_temperature_transition(ColorTemperature::MAX, 60_000_001)
+        .set_temperature_rate(ColorTemperature::MAX, 60_000_001)
         .is_err());
     r.tick(30_000_000);
     assert!(r.acknowledged().unwrap().level < Level::MAX);
@@ -604,52 +588,31 @@ fn scene_duration_limit_is_supported_and_out_of_range_rejected_without_mutation(
 }
 
 #[test]
-fn off_effects_keep_the_saved_level_and_never_persist_intermediate_frames() {
-    use crate::runtime::OffEffect;
-    for (effect, midpoint_ms, midpoint_level, end_ms) in [
-        (OffEffect::FastFade, 400, 36, 800),
-        (OffEffect::SlowFade, 800, 36, 12_800),
-        (OffEffect::DyingLight, 500, 125, 1_500),
-    ] {
-        let (h, r) = rig();
-        r.tick(0);
-        r.set_level_transition(100, true, 0).unwrap();
-        r.tick(400);
-        h.events.borrow_mut().clear();
-        r.off_with_effect(effect).unwrap();
-        assert!(!r.snapshot().intended.on);
-        assert_eq!(r.snapshot().intended.level.get(), 100);
-        assert_eq!(
-            h.events
-                .borrow()
-                .iter()
-                .filter(|e| e.starts_with("store:"))
-                .count(),
-            1
-        );
-        h.events.borrow_mut().clear();
-        r.tick(400 + midpoint_ms);
-        assert!(r.acknowledged().unwrap().on);
-        assert_eq!(r.acknowledged().unwrap().level.get(), midpoint_level);
-        r.tick(400 + end_ms);
-        assert!(!r.acknowledged().unwrap().on);
-        assert_eq!(r.acknowledged().unwrap().level.get(), 100);
-        assert!(!h.events.borrow().iter().any(|e| e.starts_with("store:")));
-        let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
-        reboot.tick(0);
-        reboot.tick(400);
-        assert!(!reboot.acknowledged().unwrap().on);
-        reboot.set_power(true).unwrap();
-        reboot.tick(800);
-        assert_eq!(reboot.acknowledged().unwrap().level.get(), 100);
-    }
-    let (_, r) = rig();
+fn power_changes_apply_at_once_keep_the_saved_level_and_write_once() {
+    let (h, r) = rig();
     r.tick(0);
-    r.set_power(true).unwrap();
-    r.tick(400);
-    r.off_with_effect(OffEffect::NoFade).unwrap();
+    r.set_level_rate(100, true, 0).unwrap();
+    assert!(r.acknowledged().unwrap().on);
+    assert_eq!(r.acknowledged().unwrap().level.get(), 100);
+    h.events.borrow_mut().clear();
+    r.set_power(false).unwrap();
     assert!(!r.acknowledged().unwrap().on);
+    assert_eq!(r.snapshot().intended.level.get(), 100);
     assert_eq!(r.level_remaining_ms(), 0);
+    assert_eq!(
+        h.events
+            .borrow()
+            .iter()
+            .filter(|e| e.starts_with("store:"))
+            .count(),
+        1
+    );
+    let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
+    reboot.tick(0);
+    assert!(!reboot.acknowledged().unwrap().on);
+    reboot.set_power(true).unwrap();
+    assert_eq!(reboot.acknowledged().unwrap().level.get(), 100);
+    assert_eq!(reboot.level_remaining_ms(), 0);
 }
 
 #[test]
@@ -662,7 +625,7 @@ fn scene_recall_commits_all_axes_once_before_output_and_restores_the_destination
         temperature: ColorTemperature::MIN,
     };
     h.events.borrow_mut().clear();
-    r.recall_scene(target, 1000).unwrap();
+    r.request(target).unwrap();
     assert_eq!(r.snapshot().intended, target);
     assert_eq!(h.events.borrow()[0], format!("store:{INTENT_KEY}"));
     assert_eq!(
@@ -673,14 +636,15 @@ fn scene_recall_commits_all_axes_once_before_output_and_restores_the_destination
             .count(),
         1
     );
-    r.tick(500);
-    assert!(r.acknowledged().unwrap().level < target.level);
+    assert_eq!(r.acknowledged().unwrap(), target);
+    assert_eq!(r.level_remaining_ms(), 0);
+    assert_eq!(r.temperature_remaining_ms(), 0);
     let reboot = Runtime::load(Access(h.clone()), Output(h.clone()));
     reboot.tick(0);
     reboot.tick(400);
     assert_eq!(reboot.acknowledged().unwrap(), target);
     h.fail_store.set(true);
-    assert!(reboot.recall_scene(LightState::default(), 0).is_err());
+    assert!(reboot.request(LightState::default()).is_err());
     assert!(reboot.acknowledged().is_err());
     // No partially saved power/level/temperature tuple replaced the prior scene.
     h.fail_store.set(false);
@@ -825,7 +789,8 @@ fn recovery_reset_waits_only_for_the_accepted_target_to_be_saved() {
     r.tick(0);
     assert!(r.reboot_ready());
     r.set_power(true).unwrap();
-    // Mid-fade is fine: the saved record already holds On, and boot fades to it.
+    r.set_level_rate(254, false, 2000).unwrap();
+    // Mid-Move is fine: the saved record already holds the Move's bound.
     assert!(r.reboot_ready());
     r.tick(400);
     h.fail_store.set(true);

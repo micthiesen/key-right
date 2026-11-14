@@ -1,5 +1,5 @@
 use crate::presets::{LightHandler, COLOR_CLUSTER, LEVEL_CLUSTER, ON_OFF_CLUSTER};
-use crate::runtime::{Hardware, OffEffect, OutputError, Runtime};
+use crate::runtime::{Hardware, OutputError, Runtime};
 use key_right_core::{ColorTemperature, Level, LightOutput, LightState, OutputFrame};
 use rs_matter::dm::clusters::app::{color_control as color, level_control as level, on_off};
 use rs_matter::dm::clusters::decl::scenes_management::AttributeValuePairStruct;
@@ -273,38 +273,37 @@ fn ordinary_commands_respect_off_and_execute_if_off_never_turns_on() {
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
     let initial = runtime.snapshot().intended;
-    light.level_to(200, false, None, lo(), lo()).unwrap();
-    light.color_to(200, 0, co(), co()).unwrap();
+    light.level_to(200, false, lo(), lo()).unwrap();
+    light.color_to(200, co(), co()).unwrap();
     assert_eq!(runtime.snapshot().intended, initial);
     let execute = color::OptionsBitmap::EXECUTE_IF_OFF;
-    light.color_to(200, 0, execute, execute).unwrap();
+    light.color_to(200, execute, execute).unwrap();
     assert_eq!(runtime.acknowledged().unwrap().temperature.get(), 200);
     assert!(!runtime.acknowledged().unwrap().on);
-    light.level_to(180, true, None, lo(), lo()).unwrap();
+    light.level_to(180, true, lo(), lo()).unwrap();
     runtime.tick(400);
     assert!(runtime.acknowledged().unwrap().on);
     assert_eq!(runtime.acknowledged().unwrap().level.get(), 180);
 }
 
 #[test]
-fn transition_stop_freezes_current_level_without_changing_other_axis() {
+fn move_stop_freezes_current_level_without_changing_other_axis() {
     let (h, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
-    light.level_to(20, true, None, lo(), lo()).unwrap();
-    runtime.tick(400);
-    light.level_to(220, false, Some(20), lo(), lo()).unwrap();
-    light.color_to(143, 20, co(), co()).unwrap();
+    light.level_to(20, true, lo(), lo()).unwrap();
+    light
+        .level_move(level::MoveModeEnum::Up, Some(100), false, lo(), lo())
+        .unwrap();
+    light
+        .color_move(color::MoveModeEnum::Down, 80, (143, 344), co(), co())
+        .unwrap();
     let writes = h.writes.get();
     runtime.tick(900);
     let mid = runtime.acknowledged().unwrap();
-    assert!(mid.level.get() > 20 && mid.level.get() < 220);
+    assert!(mid.level.get() > 20 && mid.level.get() < 254);
     assert!(mid.temperature.get() < 303 && mid.temperature.get() > 143);
-    assert_eq!(
-        h.writes.get(),
-        writes,
-        "intermediate frames must not write flash"
-    );
+    assert_eq!(h.writes.get(), writes, "Move frames must not write flash");
     light.stop_level(false, lo(), lo()).unwrap();
     runtime.tick(2400);
     assert_eq!(runtime.acknowledged().unwrap().level, mid.level);
@@ -319,7 +318,7 @@ fn with_on_off_move_reaches_off_and_step_cancels_an_earlier_move() {
     let (_, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
-    light.level_to(100, true, None, lo(), lo()).unwrap();
+    light.level_to(100, true, lo(), lo()).unwrap();
     runtime.tick(400);
     light
         .level_move(level::MoveModeEnum::Down, Some(50), true, lo(), lo())
@@ -327,13 +326,13 @@ fn with_on_off_move_reaches_off_and_step_cancels_an_earlier_move() {
     runtime.tick(900);
     assert!(runtime.acknowledged().unwrap().on);
     light
-        .level_step(level::StepModeEnum::Up, 10, Some(0), true, lo(), lo())
+        .level_step(level::StepModeEnum::Up, 10, true, lo(), lo())
         .unwrap();
     let stopped = runtime.reported().unwrap().level;
     runtime.tick(3000);
     assert_eq!(runtime.acknowledged().unwrap().level, stopped);
     assert!(runtime.acknowledged().unwrap().on);
-    light.level_to(0, true, Some(10), lo(), lo()).unwrap();
+    light.level_to(0, true, lo(), lo()).unwrap();
     runtime.tick(4000);
     assert!(!runtime.acknowledged().unwrap().on);
     assert!(runtime.acknowledged().unwrap().level >= Level::MIN);
@@ -344,7 +343,7 @@ fn matter_move_rates_remain_linear_while_targets_report_the_destination() {
     let (_, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
-    light.level_to(54, true, None, lo(), lo()).unwrap();
+    light.level_to(54, true, lo(), lo()).unwrap();
     runtime.tick(400);
     light
         .level_move(level::MoveModeEnum::Up, Some(100), false, lo(), lo())
@@ -353,8 +352,7 @@ fn matter_move_rates_remain_linear_while_targets_report_the_destination() {
         .color_move(color::MoveModeEnum::Down, 80, (143, 344), co(), co())
         .unwrap();
     runtime.tick(900);
-    // A quarter of each two-second Move is a quarter of the distance, not
-    // the 15.625% used by a smoothstep transition at the same elapsed time.
+    // A quarter of each two-second Move is a quarter of the distance.
     assert_eq!(runtime.acknowledged().unwrap().level.get(), 104);
     assert_eq!(runtime.acknowledged().unwrap().temperature.get(), 263);
     assert_eq!(runtime.reported().unwrap().level, Level::MAX);
@@ -376,10 +374,10 @@ fn color_bounds_reject_inverted_ranges_and_move_stops_at_limit() {
         .color_move(color::MoveModeEnum::Up, 10, (340, 200), co(), co())
         .is_err());
     assert!(light
-        .color_step(color::StepModeEnum::Up, 5, 0, (500, 600), co(), co())
+        .color_step(color::StepModeEnum::Up, 5, (500, 600), co(), co())
         .is_err());
-    assert!(light.color_to(0, 0, co(), co()).is_err());
-    light.color_to(600, 0, co(), co()).unwrap();
+    assert!(light.color_to(0, co(), co()).is_err());
+    light.color_to(600, co(), co()).unwrap();
     runtime.tick(400);
     assert_eq!(
         runtime.acknowledged().unwrap().temperature,
@@ -393,17 +391,17 @@ fn color_bounds_reject_inverted_ranges_and_move_stops_at_limit() {
 }
 
 #[test]
-fn failed_actuation_is_not_acknowledged_and_timed_off_survives_pending_transition() {
+fn failed_actuation_is_not_acknowledged_and_timed_off_survives_a_level_command() {
     let (h, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
     h.fail_output.set(true);
-    assert!(light.level_to(100, true, None, lo(), lo()).is_err());
+    assert!(light.level_to(100, true, lo(), lo()).is_err());
     assert!(runtime.acknowledged().is_err());
     h.fail_output.set(false);
     runtime.tick(5000);
     light.timed_on(false, 10, 0).unwrap();
-    light.level_to(200, true, Some(100), lo(), lo()).unwrap();
+    light.level_to(200, true, lo(), lo()).unwrap();
     light.tick(10);
     runtime.tick(6000);
     assert!(!runtime.acknowledged().unwrap().on);
@@ -444,49 +442,45 @@ fn off_effect_and_global_scene_recall_restore_full_settings_once() {
     let (h, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
-    light.level_to(100, true, None, lo(), lo()).unwrap();
-    light.color_to(200, 0, co(), co()).unwrap();
-    runtime.tick(400);
+    light.level_to(100, true, lo(), lo()).unwrap();
+    light.color_to(200, co(), co()).unwrap();
     let original = runtime.acknowledged().unwrap();
-    light.off_with_effect(OffEffect::SlowFade).unwrap();
     let writes = h.writes.get();
-    runtime.tick(1200);
-    // Half physical output, accounting for the normal nonzero level floor.
-    assert_eq!(runtime.acknowledged().unwrap().level.get(), 36);
-    runtime.tick(13200);
+    // Every effect variant turns off at once and keeps the remembered level.
+    light.off_with_effect().unwrap();
     assert!(!runtime.acknowledged().unwrap().on);
     assert_eq!(runtime.acknowledged().unwrap().level, original.level);
-    assert_eq!(h.writes.get(), writes);
+    assert_eq!(runtime.level_remaining_ms(), 0);
+    assert_eq!(h.writes.get(), writes + 1);
     // Another Off must not overwrite the captured scene with the dark state.
-    light.off_with_effect(OffEffect::NoFade).unwrap();
+    light.off_with_effect().unwrap();
     let execute = color::OptionsBitmap::EXECUTE_IF_OFF;
-    light.color_to(344, 0, execute, execute).unwrap();
+    light.color_to(344, execute, execute).unwrap();
     light.recall_global_scene().unwrap();
-    runtime.tick(13600);
     assert_eq!(runtime.acknowledged().unwrap(), original);
-    light.color_to(250, 0, co(), co()).unwrap();
-    runtime.tick(14000);
+    light.color_to(250, co(), co()).unwrap();
     light.recall_global_scene().unwrap();
     assert_eq!(runtime.acknowledged().unwrap().temperature.get(), 250);
 }
 
 #[test]
-fn repeated_on_preserves_dimming_but_cancels_a_pending_off_effect() {
+fn repeated_on_preserves_a_running_move_and_off_ends_it_at_once() {
     let (_, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
-    light.level_to(100, true, None, lo(), lo()).unwrap();
-    runtime.tick(400);
-    light.level_to(200, false, Some(20), lo(), lo()).unwrap();
-    runtime.tick(900);
+    light.level_to(100, true, lo(), lo()).unwrap();
+    light
+        .level_move(level::MoveModeEnum::Up, Some(100), false, lo(), lo())
+        .unwrap();
+    runtime.tick(500);
     light.power(true).unwrap();
-    assert_eq!(runtime.level_remaining_ms(), 1500);
-    light.off_with_effect(OffEffect::DyingLight).unwrap();
-    runtime.tick(1150);
+    assert_eq!(runtime.level_remaining_ms(), 1100);
+    light.off_with_effect().unwrap();
+    assert!(!runtime.acknowledged().unwrap().on);
+    assert_eq!(runtime.level_remaining_ms(), 0);
     light.power(true).unwrap();
-    assert_eq!(runtime.level_remaining_ms(), 400);
-    runtime.tick(5000);
     assert!(runtime.acknowledged().unwrap().on);
+    assert_eq!(runtime.acknowledged().unwrap().level, Level::MAX);
 }
 
 #[test]
@@ -525,9 +519,9 @@ fn full_scene_commits_once_resets_timers_and_refreshes_global_scene() {
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
     light.power(true).unwrap();
-    light.off_with_effect(OffEffect::NoFade).unwrap();
+    light.off_with_effect().unwrap();
     light.timed_on(false, 10, 0).unwrap();
-    light.off_with_effect(OffEffect::NoFade).unwrap();
+    light.off_with_effect().unwrap();
     let writes = h.writes.get();
     light.begin_scene().unwrap();
     light
@@ -552,7 +546,7 @@ fn full_scene_commits_once_resets_timers_and_refreshes_global_scene() {
     assert!(recalled.on);
     assert_eq!(recalled.level.get(), 200);
     assert_eq!(recalled.temperature.get(), 200);
-    light.off_with_effect(OffEffect::NoFade).unwrap();
+    light.off_with_effect().unwrap();
     light.recall_global_scene().unwrap();
     runtime.tick(2400);
     assert_eq!(runtime.acknowledged().unwrap(), recalled);
@@ -582,20 +576,17 @@ fn failed_scene_actuation_returns_error_with_complete_target_for_recovery() {
     assert_eq!(target.temperature.get(), 200);
     h.fail_output.set(false);
     runtime.tick(5000);
-    assert!(!runtime.acknowledged().unwrap().on);
-    runtime.tick(5400);
     assert_eq!(runtime.acknowledged().unwrap(), target);
 }
 
 #[test]
-fn matter_attributes_report_targets_through_fades_and_fail_when_output_is_unknown() {
+fn matter_attributes_report_final_values_at_once_and_fail_when_output_is_unknown() {
     let (h, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
     let ctx = TestContext::new(&light);
-    light.level_to(200, true, Some(20), lo(), lo()).unwrap();
-    light.color_to(200, 20, co(), co()).unwrap();
-    runtime.tick(500);
+    light.level_to(200, true, lo(), lo()).unwrap();
+    light.color_to(200, co(), co()).unwrap();
     assert!(ready(on_off::ClusterAsyncHandler::on_off(&light, &ctx)).unwrap());
     assert_eq!(
         ready(level::ClusterAsyncHandler::current_level(&light, &ctx))
@@ -610,25 +601,45 @@ fn matter_attributes_report_targets_through_fades_and_fail_when_output_is_unknow
         .unwrap(),
         200
     );
+    assert_eq!(
+        ready(level::ClusterAsyncHandler::remaining_time(&light, &ctx)).unwrap(),
+        0
+    );
+    assert_eq!(
+        ready(color::ClusterAsyncHandler::remaining_time(&light, &ctx)).unwrap(),
+        0
+    );
+    assert_eq!(runtime.acknowledged().unwrap(), runtime.reported().unwrap());
+    // A Move reports its destination at once and counts down RemainingTime.
+    light
+        .level_move(level::MoveModeEnum::Up, Some(54), false, lo(), lo())
+        .unwrap();
+    assert_eq!(
+        ready(level::ClusterAsyncHandler::current_level(&light, &ctx))
+            .unwrap()
+            .into_option(),
+        Some(254)
+    );
+    assert_eq!(
+        ready(level::ClusterAsyncHandler::remaining_time(&light, &ctx)).unwrap(),
+        10
+    );
     assert_ne!(runtime.acknowledged().unwrap(), runtime.reported().unwrap());
-    light.off_with_effect(OffEffect::FastFade).unwrap();
+    light.level_to(200, false, lo(), lo()).unwrap();
+    light.off_with_effect().unwrap();
     assert!(!ready(on_off::ClusterAsyncHandler::on_off(&light, &ctx)).unwrap());
-    assert!(runtime.acknowledged().unwrap().on);
+    assert!(!runtime.acknowledged().unwrap().on);
     assert_eq!(
         ready(level::ClusterAsyncHandler::current_level(&light, &ctx))
             .unwrap()
             .into_option(),
         Some(200)
     );
-    runtime.tick(1300);
     light.recall_global_scene().unwrap();
-    runtime.tick(1700);
     assert_eq!(runtime.acknowledged().unwrap().level.get(), 200);
     assert_eq!(runtime.acknowledged().unwrap().temperature.get(), 200);
     h.fail_output.set(true);
-    light.power(false).unwrap();
-    // The first changed physical frame exposes the failed adapter.
-    runtime.tick(1720);
+    assert!(light.power(false).is_err());
     assert!(ready(on_off::ClusterAsyncHandler::on_off(&light, &ctx)).is_err());
     assert!(ready(level::ClusterAsyncHandler::current_level(&light, &ctx)).is_err());
     assert!(ready(color::ClusterAsyncHandler::color_temperature_mireds(
@@ -643,36 +654,38 @@ fn minimum_with_on_off_is_off_but_plain_level_and_on_can_use_minimum() {
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
     for raw in [0, 1] {
-        light.level_to(100, true, None, lo(), lo()).unwrap();
-        light.level_to(raw, true, None, lo(), lo()).unwrap();
+        light.level_to(100, true, lo(), lo()).unwrap();
+        light.level_to(raw, true, lo(), lo()).unwrap();
         assert!(!runtime.reported().unwrap().on);
         assert_eq!(runtime.reported().unwrap().level, Level::MIN);
     }
     light.power(true).unwrap();
-    light.level_to(1, false, None, lo(), lo()).unwrap();
+    light.level_to(1, false, lo(), lo()).unwrap();
     assert!(runtime.reported().unwrap().on);
-    light.level_to(2, true, None, lo(), lo()).unwrap();
+    light.level_to(2, true, lo(), lo()).unwrap();
     light
-        .level_step(level::StepModeEnum::Down, 1, None, true, lo(), lo())
+        .level_step(level::StepModeEnum::Down, 1, true, lo(), lo())
         .unwrap();
     assert!(!runtime.reported().unwrap().on);
 }
 
 #[test]
-fn ordinary_level_commands_never_resurrect_an_off_fade() {
+fn ordinary_level_commands_never_resurrect_a_move_down_to_off() {
     let (_, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
-    light.level_to(100, true, None, lo(), lo()).unwrap();
-    runtime.tick(400);
-    light.off_with_effect(OffEffect::SlowFade).unwrap();
+    light.level_to(100, true, lo(), lo()).unwrap();
+    light
+        .level_move(level::MoveModeEnum::Down, Some(50), true, lo(), lo())
+        .unwrap();
     runtime.tick(800);
     assert!(runtime.acknowledged().unwrap().on);
-    light.level_to(180, false, None, lo(), lo()).unwrap();
     assert!(!runtime.reported().unwrap().on);
-    assert_eq!(runtime.reported().unwrap().level.get(), 100);
+    light.level_to(180, false, lo(), lo()).unwrap();
+    assert!(!runtime.reported().unwrap().on);
+    assert_eq!(runtime.reported().unwrap().level, Level::MIN);
     let execute = level::OptionsBitmap::EXECUTE_IF_OFF;
-    light.level_to(180, false, None, execute, execute).unwrap();
+    light.level_to(180, false, execute, execute).unwrap();
     assert!(!runtime.reported().unwrap().on);
     assert_eq!(runtime.reported().unwrap().level.get(), 180);
     runtime.tick(20000);
@@ -680,14 +693,15 @@ fn ordinary_level_commands_never_resurrect_an_off_fade() {
 }
 
 #[test]
-fn both_stop_variants_freeze_an_off_fade_at_the_acknowledged_frame() {
+fn both_stop_variants_freeze_a_move_down_to_off_at_the_acknowledged_frame() {
     for with_on_off in [false, true] {
         let (_, runtime) = rig();
         let scenes = ScenesState::new();
         let light = handler(&runtime, &scenes);
-        light.level_to(100, true, None, lo(), lo()).unwrap();
-        runtime.tick(400);
-        light.level_to(0, true, Some(20), lo(), lo()).unwrap();
+        light.level_to(100, true, lo(), lo()).unwrap();
+        light
+            .level_move(level::MoveModeEnum::Down, Some(50), true, lo(), lo())
+            .unwrap();
         runtime.tick(900);
         let frame = runtime.acknowledged().unwrap();
         assert!(frame.on);
@@ -700,20 +714,29 @@ fn both_stop_variants_freeze_an_off_fade_at_the_acknowledged_frame() {
 }
 
 #[test]
-fn fades_notify_only_remaining_time_then_targets_and_faults_notify_clusters() {
+fn moves_notify_only_remaining_time_then_targets_and_faults_notify_clusters() {
     let (h, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
     let ctx = TestContext::new(&light);
     let clusters = [6, 8, 0x300];
     let mut reports = core::array::from_fn::<_, 3, _>(|index| light.report_state(index));
-    light.level_to(200, true, Some(20), lo(), lo()).unwrap();
-    light.color_to(200, 20, co(), co()).unwrap();
+    light.level_to(200, true, lo(), lo()).unwrap();
+    light.color_to(200, co(), co()).unwrap();
     for (index, report) in reports.iter_mut().enumerate() {
         light.poll_report(&ctx, index, clusters[index], report);
     }
     for cluster in clusters {
         assert!(ctx.notifications.borrow().contains(&(cluster, None)));
+    }
+    light
+        .level_move(level::MoveModeEnum::Up, Some(54), false, lo(), lo())
+        .unwrap();
+    light
+        .color_move(color::MoveModeEnum::Down, 57, (143, 344), co(), co())
+        .unwrap();
+    for (index, report) in reports.iter_mut().enumerate() {
+        light.poll_report(&ctx, index, clusters[index], report);
     }
     ctx.notifications.borrow_mut().clear();
     let level_version = level::ClusterAsyncHandler::dataver(&light);
@@ -768,23 +791,27 @@ fn fades_notify_only_remaining_time_then_targets_and_faults_notify_clusters() {
 }
 
 #[test]
-fn identical_target_preserves_deadline_and_reports_completion() {
+fn transition_times_are_ignored_and_remaining_time_stays_zero() {
     let (_, runtime) = rig();
     let scenes = ScenesState::new();
     let light = handler(&runtime, &scenes);
     let ctx = TestContext::new(&light);
-    light.level_to(100, true, None, lo(), lo()).unwrap();
-    light.level_to(100, false, Some(100), lo(), lo()).unwrap();
-    let mut report = light.report_state(1);
+    light.level_to(100, true, lo(), lo()).unwrap();
+    light
+        .level_step(level::StepModeEnum::Up, 50, false, lo(), lo())
+        .unwrap();
+    light
+        .color_step(color::StepModeEnum::Down, 50, (0, 0), co(), co())
+        .unwrap();
+    assert_eq!(runtime.acknowledged().unwrap(), runtime.reported().unwrap());
+    assert_eq!(runtime.acknowledged().unwrap().level.get(), 150);
+    assert_eq!(runtime.acknowledged().unwrap().temperature.get(), 253);
     assert_eq!(
         ready(level::ClusterAsyncHandler::remaining_time(&light, &ctx)).unwrap(),
-        4
+        0
     );
-    runtime.tick(400);
-    light.poll_report(&ctx, 1, 8, &mut report);
-    assert_eq!(*ctx.notifications.borrow(), vec![(8, Some(1))]);
     assert_eq!(
-        ready(level::ClusterAsyncHandler::remaining_time(&light, &ctx)).unwrap(),
+        ready(color::ClusterAsyncHandler::remaining_time(&light, &ctx)).unwrap(),
         0
     );
 }

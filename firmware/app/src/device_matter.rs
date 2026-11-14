@@ -155,7 +155,7 @@ pub async fn run<H: crate::runtime::Hardware>(
         pid: TEST_PID,
         hw_ver: 1,
         hw_ver_str: "ESP32-C3_MINI_V1",
-        sw_ver: 7,
+        sw_ver: 8,
         sw_ver_str: env!("CARGO_PKG_VERSION"),
         device_type: Some(COLOR_TEMPERATURE_LIGHT.dtype),
         ..BasicInfoConfig::new()
