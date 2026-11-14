@@ -3,6 +3,16 @@ use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal}
 use embassy_time::{with_timeout, Duration};
 use portable_atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
 pub static RESTART: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+/// Console `test matter`: hold the Matter TX buffer until the watchdog restarts
+/// the transport, standing in for a send blocked on an unreachable peer.
+pub static MATTER_WEDGE_TEST: AtomicBool = AtomicBool::new(false);
+static MATTER_WEDGES: AtomicU32 = AtomicU32::new(0);
+pub fn matter_wedged() {
+    MATTER_WEDGES.fetch_add(1, Ordering::Relaxed);
+}
+pub fn matter_wedges() -> u32 {
+    MATTER_WEDGES.load(Ordering::Relaxed)
+}
 static DISCONNECT: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static DISCONNECT_PENDING: AtomicBool = AtomicBool::new(false);
 static TIMEOUTS: AtomicU32 = AtomicU32::new(0);

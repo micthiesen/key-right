@@ -252,6 +252,14 @@ ESP, and no independent output cutoff.
   transmit progress clears the stall timer, including under busy traffic.
   Keep the 15-second execution watchdog. These detect specified local failures;
   they do not prove recovery from every possible Matter or network hang.
+- From 0.1.6, sample rs-matter's transport TX buffer once a second. If it is
+  unavailable at every sample for 90 seconds while associated, restart the
+  transport in place. A second such wedge without 15 minutes of continuous local
+  network health in between resets the MCU through verified zero output, once
+  the saved record holds the accepted target (at most a 60-second wait;
+  otherwise restart in place again). A reset is allowed while
+  On: intent is restored on boot, while a wedged lamp could not be controlled
+  at all.
 
 PCA register semantics come from the
 [NXP datasheet](https://www.nxp.com/docs/en/data-sheet/PCA9635.pdf);

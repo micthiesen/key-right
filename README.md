@@ -31,7 +31,9 @@ intermediate frames never write flash. Visual fades and detailed loaded startup
 remain unverified. Low-output steps remain limited by the PCA's 8-bit resolution.
 Firmware 0.1.5 adds Matter-delivered OTA updates with bootloader rollback. It
 requires one USB migration per board, and neither board has had it yet. See
-[development](docs/development.md#ota-updates).
+[development](docs/development.md#ota-updates). Firmware 0.1.6 restarts the
+Matter transport, and resets if needed, when the stack stops sending while
+Wi-Fi stays up, a cause of Home's No Response.
 The [validation record](docs/validation-record.md) separates installed-image
 results, user observations and remaining checks.
 

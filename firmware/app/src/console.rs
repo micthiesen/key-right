@@ -33,9 +33,15 @@ pub async fn run<K: KvBlobStoreAccess, H: Hardware>(
                 let mut reply = String::<1024>::new();
                 if overflow {
                     let _ = reply.push_str("KR ERR line_too_long");
-                } else if matches!(line.trim(), "test wifi" | "test network") {
+                } else if matches!(line.trim(), "test wifi" | "test network" | "test matter") {
                     if !is_commissioned() {
                         let _ = reply.push_str("KR ERR requires_commissioned_device");
+                    } else if line.trim() == "test matter" {
+                        crate::network::MATTER_WEDGE_TEST
+                            .store(true, portable_atomic::Ordering::Relaxed);
+                        let _ = reply.push_str(
+                            "KR OK matter_wedge_test restart_expected_seconds=90 intent_preserved=true",
+                        );
                     } else if line.trim() == "test wifi" {
                         match crate::network::request_disconnect() {
                             Ok(()) => {
@@ -119,10 +125,10 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             let s = runtime.snapshot();
             let (attempts, timeouts, restarts, connected) = crate::network::metrics();
             let (rssi, local_ready, ipv4_ready, ip_timeouts) = crate::network::local_metrics();
-            let _=write!(out,"KR OK mode={} firmware={} chip=esp32c3 identity=KR-{} uptime_ms={} reset={:?} intended_on={} intended_level={} intended_mired={} stock_range_percent=1..10 acknowledged={:?} fault={:?} output_failures={} storage_failures={} recoveries={} wifi_connected={} rssi_dbm={:?} local_ip_ready={} ipv4_ready={} wifi_attempts={} wifi_timeouts={} ip_timeouts={} wifi_restarts={} usb_dropped={} physical_output=unmeasured",
+            let _=write!(out,"KR OK mode={} firmware={} chip=esp32c3 identity=KR-{} uptime_ms={} reset={:?} intended_on={} intended_level={} intended_mired={} stock_range_percent=1..10 acknowledged={:?} fault={:?} output_failures={} storage_failures={} recoveries={} wifi_connected={} rssi_dbm={:?} local_ip_ready={} ipv4_ready={} wifi_attempts={} wifi_timeouts={} ip_timeouts={} wifi_restarts={} matter_wedges={} usb_dropped={} physical_output=unmeasured",
                 H::MODE,env!("CARGO_PKG_VERSION"),esp_hal::efuse::base_mac_address(),embassy_time::Instant::now().as_millis(),esp_hal::system::reset_reason(),
                 s.intended.on,s.intended.level.get(),s.intended.temperature.get(),s.applied,s.fault,s.output_failures,s.storage_failures,s.recoveries,
-                connected,rssi,local_ready,ipv4_ready,attempts,timeouts,ip_timeouts,restarts,crate::output::dropped());
+                connected,rssi,local_ready,ipv4_ready,attempts,timeouts,ip_timeouts,restarts,crate::network::matter_wedges(),crate::output::dropped());
             let _ = write!(out, " acknowledged_stock_percent_numerator={:?} stock_percent_denominator=253 level_remaining_ms={} temperature_remaining_ms={}",
                 s.applied_frame.map(|frame| frame.brightness.get()), runtime.level_remaining_ms(), runtime.temperature_remaining_ms());
             return;
@@ -191,7 +197,7 @@ fn command<K: KvBlobStoreAccess, H: Hardware>(
             return;
         }
         _ => {
-            let _=out.push_str("KR ERR commands=status|off|on|level_1..254|temperature_143..344|on_1_or_2|verify|registers|commissioning_code|commissioning_qr|reboot|test_watchdog|test_wifi|test_network");
+            let _=out.push_str("KR ERR commands=status|off|on|level_1..254|temperature_143..344|on_1_or_2|verify|registers|commissioning_code|commissioning_qr|reboot|test_watchdog|test_wifi|test_network|test_matter");
             return;
         }
     };

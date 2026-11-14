@@ -5,13 +5,16 @@ use core::fmt::Write as _;
 
 use crate::commissioning::{qr_payload, DiscoveryName};
 use crate::commissioning_ble::NamedBle;
+use crate::matter_watchdog as watchdog;
 use crate::network_driver::EspWifiDriver;
 use embassy_futures::join::join4;
+use embassy_futures::select::Either4;
 use embassy_time::{Duration, Instant, Timer};
 use esp_bootloader_esp_idf::partitions::PARTITION_TABLE_MAX_LEN;
 use esp_hal::peripherals::{ADC1, BT, FLASH, RNG, WIFI};
 use esp_hal::rng::{Trng, TrngSource};
 use heapless::String;
+use portable_atomic::Ordering;
 use rs_matter_embassy::matter::crypto::{default_crypto, Crypto};
 use rs_matter_embassy::matter::dm::clusters::app::{color_control, level_control, on_off};
 use rs_matter_embassy::matter::dm::clusters::basic_info::BasicInfoConfig;
@@ -27,7 +30,8 @@ use rs_matter_embassy::matter::dm::{
 };
 use rs_matter_embassy::matter::error::{Error, ErrorCode};
 use rs_matter_embassy::matter::utils::init::InitMaybeUninit;
-use rs_matter_embassy::matter::{clusters, devices, BasicCommData};
+use rs_matter_embassy::matter::utils::storage::pooled::Buffers as _;
+use rs_matter_embassy::matter::{clusters, devices, BasicCommData, Matter};
 use rs_matter_embassy::stack::rand::reseeding_csprng;
 use rs_matter_embassy::wireless::{EmbassyWifi, EmbassyWifiMatterStack};
 use static_cell::StaticCell;
@@ -151,7 +155,7 @@ pub async fn run<H: crate::runtime::Hardware>(
         pid: TEST_PID,
         hw_ver: 1,
         hw_ver_str: "ESP32-C3_MINI_V1",
-        sw_ver: 6,
+        sw_ver: 7,
         sw_ver_str: env!("CARGO_PKG_VERSION"),
         device_type: Some(COLOR_TEMPERATURE_LIGHT.dtype),
         ..BasicInfoConfig::new()
@@ -297,6 +301,7 @@ pub async fn run<H: crate::runtime::Hardware>(
     let transport = async {
         let mut backoff = crate::recovery::RestartBackoff::default();
         let mut queue_recovery = crate::network_tx::QueueRecovery::default();
+        let mut wedge_recovery = watchdog::WedgeRecovery::default();
         loop {
             if !stack.is_commissioned() {
                 if let Err(e) = open_commissioning() {
@@ -305,7 +310,7 @@ pub async fn run<H: crate::runtime::Hardware>(
             }
             crate::network::RESTART.reset();
             crate::network_driver::TX_STALL.reset();
-            let result = embassy_futures::select::select3(
+            let result = embassy_futures::select::select4(
                 stack.run_coex(
                     NamedBle::new(
                         EmbassyWifi::new(&mut driver, weak_rand, true, stack),
@@ -318,13 +323,35 @@ pub async fn run<H: crate::runtime::Hardware>(
                 ),
                 crate::network::RESTART.wait(),
                 crate::network_driver::TX_STALL.wait(),
+                watch_transport(stack.matter()),
             )
             .await;
-            let healthy_ms = crate::network::healthy_for_ms(Instant::now().as_millis());
-            queue_recovery.record_health(healthy_ms);
-            if matches!(result, embassy_futures::select::Either3::Third(()))
-                && queue_recovery.reboot_required()
+            let now_ms = Instant::now().as_millis();
+            let wedged = if let Either4::Fourth(wedge) = result {
+                crate::network::matter_wedged();
+                log::error!("Matter transport wedged: {}", wedge.as_str());
+                true
+            } else {
+                false
+            };
+            if wedge_recovery.after_run(crate::network::current_healthy_ms(now_ms), wedged)
+                == watchdog::Recovery::Reboot
             {
+                if reboot_ready(&runtime).await {
+                    let off_verified = runtime.prepare_reboot();
+                    log::error!(
+                        "Matter transport wedged again after an in-place restart; rebooting with saved state/fabrics preserved; off_registers_verified={off_verified}"
+                    );
+                    Timer::after(Duration::from_millis(250)).await;
+                    esp_hal::system::software_reset();
+                }
+                log::error!(
+                    "Accepted target not saved within 60 s; restarting the transport instead of rebooting"
+                );
+            }
+            let healthy_ms = crate::network::healthy_for_ms(now_ms);
+            queue_recovery.record_health(healthy_ms);
+            if matches!(result, Either4::Third(())) && queue_recovery.reboot_required() {
                 let off_verified = runtime.prepare_reboot();
                 log::error!(
                     "Transmit queue remained stuck after radio recreation; rebooting with saved state/fabrics preserved; off_registers_verified={off_verified}"
@@ -371,6 +398,52 @@ pub async fn run<H: crate::runtime::Hardware>(
     )
     .await;
     unreachable!()
+}
+
+/// Resolves once a transport buffer stays held; see `matter_watchdog`.
+async fn watch_transport(matter: &Matter<'_>) -> watchdog::Wedge {
+    let tx = matter.transport_tx_buffer();
+    let mut watch = watchdog::Watch::new(Instant::now().as_millis());
+    // Dropped with this future when the transport stops, releasing the buffer.
+    let mut test_hold = None;
+    loop {
+        Timer::after(Duration::from_millis(watchdog::SAMPLE_MS)).await;
+        // Never await the buffer here: a real wedge holding it would stop sampling.
+        if test_hold.is_none() && crate::network::MATTER_WEDGE_TEST.load(Ordering::Relaxed) {
+            test_hold = tx.get_immediate();
+            if test_hold.is_some() {
+                crate::network::MATTER_WEDGE_TEST.store(false, Ordering::Relaxed);
+                log::warn!("test matter: holding the Matter TX buffer");
+            }
+        }
+        // Taking and releasing a buffer with no await between is what the mDNS
+        // responder does for every packet.
+        let sample = watchdog::Sample {
+            tx_free: tx.get_immediate().is_some(),
+            associated: crate::network::metrics().3,
+        };
+        if let Some(wedge) = watch.observe(Instant::now().as_millis(), sample) {
+            return wedge;
+        }
+    }
+}
+
+/// Waits, bounded, until a reset would lose no accepted command.
+async fn reboot_ready<K, H>(runtime: &Runtime<K, H>) -> bool
+where
+    K: rs_matter_embassy::matter::persist::KvBlobStoreAccess,
+    H: crate::runtime::Hardware,
+{
+    let deadline = Instant::now() + Duration::from_millis(watchdog::REBOOT_READY_WAIT_MS);
+    loop {
+        if runtime.reboot_ready() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        Timer::after(Duration::from_secs(1)).await;
+    }
 }
 
 // Used only before any fabric exists; there are no commissioned subscribers to notify.

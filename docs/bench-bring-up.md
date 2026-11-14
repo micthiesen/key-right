@@ -150,6 +150,7 @@ without unpairing or changing network settings:
 ```sh
 python3 scripts/device.py --port PORT test wifi
 python3 scripts/device.py --port PORT test network
+python3 scripts/device.py --port PORT test matter
 python3 scripts/device.py --port PORT test watchdog
 ```
 
@@ -158,6 +159,13 @@ actual station disconnect followed by normal reconnection. `test network`
 recreates the complete transport. Observe Wi-Fi/local-IPv6 readiness and restored
 Home control with the same intended power, brightness, temperature and fabrics.
 An absent Internet connection or an idle Home controller is not a failure.
+
+`test matter` (0.1.6 and later) holds the Matter TX buffer, as a send blocked on
+an unreachable controller does, so Home control and mDNS answers stop. After
+about 90 s the log shows `Matter transport wedged`, `status` shows
+`matter_wedges=1`, and the transport restarts without a reset. Home control and
+the same intent return. Running it again within 15 minutes resets the MCU through
+verified zero, then restores saved state.
 
 `test watchdog` requires settled, verified output. It stalls the firmware task
 until the 15-second watchdog resets the MCU; the PCA retains its previous frame

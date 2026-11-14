@@ -64,6 +64,12 @@ recovery remain unverified; do not repeat completed probing.
 Both installed boards report 4 MiB flash; no PSRAM is required. Detect each device's
 capacity before flashing.
 
+Firmware 0.1.6 (software version 7) adds a Matter transport watchdog: a
+transport TX buffer held 90 s while associated restarts the transport; a
+repeat without 15 healthy minutes between resets via verified zero once the
+accepted target is saved, On or Off. Console `test matter` simulates it. The same pinned
+smoltcp/rs-matter wedge hit Stillair (b4318ca); `docs/development.md` owns it.
+Use 0.1.6 for each board's OTA migration flash.
 Firmware 0.1.5 (software version 6) adds OTA via esp-lan-ota, pinned at rev
 `5e214ee6aafe642cf1a1bbbe583bae95e460b4a1`, in the real `key-right` image only.
 Its cluster sits on light endpoint 1. The bench image has no OTA and the
@@ -80,7 +86,7 @@ and passes PCA readback. Otherwise it resets unconfirmed after 5 minutes, and
 the bootloader rolls back; with a bootloader that cannot roll back it stays up
 instead of reset-looping. Any earlier reset, including console `reboot`, also
 rolls back. OTA reboots use the normal verified-zero reboot, which preserves
-intent. The real image fills 95% of a slot, about 99 KiB headroom; check
+intent. The real image fills 95% of a slot, about 96 KiB headroom; check
 `flash.sh --check` before adding features. Neither board is migrated yet.
 
 The C3 takes power directly from J6's measured 3.37 V rail at its `3.3` pad.

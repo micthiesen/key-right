@@ -1,5 +1,30 @@
 # Software verification
 
+## 2026-11-13 Matter transport watchdog, 0.1.6
+
+Basic Information software version is **7 / `0.1.6`**. Both images sample the
+Matter transport TX buffer once a second. If it stays held for 90 s while
+associated, the transport restarts. A repeat wedge without 15 healthy minutes in
+between resets the MCU once the accepted target is saved. See
+[development](development.md#matter-transport-watchdog-016). No dependency
+changed: the lockfile differs only in the application version.
+
+| Check | Result |
+| --- | --- |
+| `sh scripts/check.sh` | Formatting, strict Clippy, 34 core/CLI Rust tests, CLI simulation and 31 Python tests passed |
+| `sh scripts/check-firmware.sh` | Formatting, strict host/C3 Clippy, 96 application host tests, simulated/real/radio-diagnostic release builds and linked-stack checks passed |
+| `sh scripts/flash.sh --check` | Real image: 1,933,264 / 2,031,616 bytes of `ota_0`, 95.16%, 98,352 bytes of headroom; linked main-stack reservation 45,952 bytes |
+| `sh scripts/flash.sh --bench --check` | Simulated image: 1,895,952 / 2,031,616 bytes, 93.32%; linked main-stack reservation 47,936 bytes |
+
+The real image grew 3,024 bytes from 0.1.5. Nine new host tests cover the stuck
+timer, which is reset by any free sample or by disassociation, and the
+restart-then-reset escalation, which counts healthy time rather than wall time.
+They also cover `reboot_ready`, which refuses while an accepted Off is unsaved
+and after `prepare_reboot`, but not during a fade. The async glue in
+`device_matter.rs` has no host test. No board was connected, flashed or reset.
+Hardware checks are pending in the
+[validation record](validation-record.md#matter-transport-watchdog-firmware-016-pending).
+
 ## 2026-10-12 OTA via esp-lan-ota, 0.1.5
 
 Basic Information software version is **6 / `0.1.5`**. The real image adds

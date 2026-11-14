@@ -17,6 +17,7 @@ mod commissioning_ble;
 mod console;
 mod device_matter;
 mod hardware;
+mod matter_watchdog;
 mod network;
 mod network_driver;
 mod network_scan;

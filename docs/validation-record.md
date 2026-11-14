@@ -22,6 +22,9 @@ Probing is complete. Board A's 0.1.4 flash and saved-Off reboot passed below;
 visual fades, detailed loaded startup and long-outage recovery remain unverified.
 Board B awaits its update. Firmware 0.1.5 adds OTA updates; neither board has
 been migrated to the OTA layout (see [OTA migration](#ota-migration-firmware-015-pending)).
+Firmware 0.1.6 adds a Matter transport watchdog after reported No Response
+drop-outs (see [Matter transport watchdog](#matter-transport-watchdog-firmware-016-pending));
+use 0.1.6 for the migration flash.
 Detailed results and limits are recorded below.
 
 **Current wiring correction:** after the bus voltage checks, Michael identified
@@ -651,7 +654,47 @@ yet run on either board.
 Record the commit, image size, and console evidence for each step. Do not unpair
 either board or erase NVS to work around a failed migration.
 
-## LED-connected observations and remaining checks
+## Matter transport watchdog, firmware 0.1.6, pending
+
+**Report.** By 2026-11-13 Michael reported that Key Right had shown No Response
+in Apple Home a few times. Whether each case recovered by itself or after a power
+cycle was not recorded.
+
+**Live probe, 2026-11-13 about 23:10 local, read-only from the Mac.** Both lamps
+were healthy at that time:
+
+| Check | Board A `8856A639ECF40000.local` | Board B `8856A639F4140000.local` |
+| --- | --- | --- |
+| Address (mDNS) | `10.10.1.18`, `fe80::8a56:a6ff:fe39:ecf4` | `10.10.1.13`, `fe80::8a56:a6ff:fe39:f414` |
+| ARP | Answered, correct MAC | Answered, correct MAC |
+| `_matter._tcp` browse | Both fabrics advertised (`00A24DE50CF9BB3D`, `E38C120B0618E493`) | Both fabrics advertised |
+| Direct unicast mDNS to the lamp, port 5353 | PTR/SRV/A/AAAA answered in 36–69 ms; both fabrics' SRV point to port 5540 | Answered in 23–118 ms; both fabrics' SRV point to port 5540 |
+| ICMP echo | No reply (expected: `auto-icmp-echo-reply` is not enabled in this build) | No reply (expected) |
+
+Directed mDNS replies need the transport TX buffer, so neither lamp was wedged
+during the probe. Python sockets were blocked by macOS Local Network privacy,
+so UDP port-unreachable checks were not possible; `dig` and `ping` worked.
+UniFi client history was not reachable from this session, so past Wi-Fi
+disconnects of either lamp are unknown.
+
+**Cause, estimated.** Key Right uses the same pinned rs-matter 0.2.0,
+rs-matter-embassy `f31233a`, smoltcp 0.13.1, embassy-net 0.9.1 and edge-mdns
+0.8.0 as Stillair. Stillair's 2026-11-13 wedge therefore applies unchanged (see
+[development](development.md#matter-transport-watchdog-016)). Key Right's
+existing monitors cover the radio, association, IPv6 and the driver's transmit
+queue, and all stay healthy during that wedge. Key Right serves two fabrics
+with up to 15 subscriptions, so it has more chances for a report to a departed
+controller. Not established: a wedge has never been captured on a lamp, and
+some drop-outs may be ordinary Wi-Fi outages or the existing transport
+restarts, which recover by themselves.
+
+| Check (0.1.6, commissioned board, USB console) | Board A | Board B |
+| --- | --- | --- |
+| `status` shows `firmware=0.1.6` and `matter_wedges=0` after the flash; Home shows software version 7 | Pending | Pending |
+| `test matter` with the lamp On: within about 95 s the log shows `Matter transport wedged`, no reset; Home control returns with the same intent; `matter_wedges=1` | Pending | Pending |
+| `test matter` again within 15 minutes: the log shows the reset line; the lamp returns to the same saved state; both fabrics load | Pending | Pending |
+| Long-term: no No Response that needs a power cycle; record any `matter_wedges` above 0 found in `status` | Pending | Pending |
+
 
 After both boards were released for reassembly, Michael reported that both
 lamps work great. Record this as successful overall operation, without

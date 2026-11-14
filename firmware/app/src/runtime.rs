@@ -308,6 +308,12 @@ impl<K: KvBlobStoreAccess, H: Hardware> Runtime<K, H> {
         s.revision = s.revision.wrapping_add(1);
         verified
     }
+    /// A recovery reset now loses no accepted command: the saved record holds
+    /// the target. Fades need not finish, because boot fades to that target.
+    pub fn reboot_ready(&self) -> bool {
+        let s = self.state.borrow();
+        !s.dirty && s.fault != Fault::Rebooting
+    }
     pub fn watchdog_test_ready(&self) -> Result<(), Error> {
         {
             let s = self.state.borrow();

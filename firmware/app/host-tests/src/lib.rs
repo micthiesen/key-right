@@ -8,6 +8,8 @@ pub mod boot;
 pub mod commissioning;
 #[path = "../../src/light.rs"]
 pub mod light;
+#[path = "../../src/matter_watchdog.rs"]
+pub mod matter_watchdog;
 #[path = "../../src/network_scan.rs"]
 pub mod network_scan;
 #[path = "../../src/network_tx.rs"]
@@ -33,6 +35,8 @@ mod commissioning_tests;
 mod control_tests;
 #[cfg(test)]
 mod matter_capacity_tests;
+#[cfg(test)]
+mod matter_watchdog_tests;
 #[cfg(test)]
 mod network_scan_tests;
 #[cfg(test)]

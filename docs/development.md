@@ -23,7 +23,8 @@ Wi-Fi/IP ready. Board B remains on 0.1.3. Visual fades and the resistor trial
 remain unverified.
 Firmware 0.1.5 adds Matter-delivered OTA updates through
 [esp-lan-ota](https://github.com/micthiesen/esp-lan-ota). Neither board has
-been migrated to it; see [OTA updates](#ota-updates).
+been migrated to it; see [OTA updates](#ota-updates). Firmware 0.1.6 adds the
+[Matter transport watchdog](#matter-transport-watchdog-016).
 The corrected U4 map is in [hardware.md](hardware.md); ESP pins remain unchanged.
 See [the validation record](validation-record.md) for per-board rework and results.
 
@@ -272,11 +273,11 @@ break, and its PCA readback passes. If that has not happened 5 minutes after boo
 Any reset before confirmation, including console `reboot` or the watchdog,
 lets the bootloader return to the previous image. Uploads are refused while the
 running image is unconfirmed. The real image fills about 95% of a `0x1F0000`
-slot, roughly 100 KiB of headroom. `flash.sh --check` reports the current
+slot, roughly 96 KiB of headroom. `flash.sh --check` reports the current
 figure.
 
-For the next planned opening, use the normal real image (0.1.5, Matter software
-version 6). This is each board's one-time OTA migration, described above. Retain
+For the next planned opening, use the normal real image (0.1.6, Matter software
+version 7). This is each board's one-time OTA migration, described above. Retain
 each board's NVS and existing Home membership, and follow the VBUS-blocked USB
 rule. No new commissioning or routine probing is needed.
 After update, verify On/Off, brightness and temperature fades visually, interrupt
@@ -439,6 +440,52 @@ watchdog covers stalled execution. Other hangs that leave these local signals
 healthy can still evade detection; live recovery evidence belongs in the
 validation record.
 
+### Matter transport watchdog (0.1.6)
+
+The pinned stack can stop Matter and mDNS while Wi-Fi, IPv6 and the driver's
+transmit queue all stay healthy, so none of the checks above fire. smoltcp
+0.13.1 keeps a UDP packet whose next hop never answers ARP/NDP at the head of
+its socket queue, retrying discovery every second without a deadline
+(`PacketBuffer::dequeue_with` dequeues nothing when dispatch fails). The
+rs-matter-embassy socket has four metadata slots. When a subscribed controller
+leaves or changes its link-local address after its neighbor entry expires,
+reports to it fill those slots. rs-matter's TX loop then awaits `send_to` while
+holding its single transport TX buffer, and the built-in mDNS responder awaits
+the same buffer. The lamp still answers ARP and NDP, but Home shows No
+Response until power is cut. Stillair, on the same pinned versions, wedged this
+way on 2026-11-13.
+
+`matter_watchdog` samples the TX buffer once a second with the non-blocking
+`get_immediate()`, as the mDNS responder does for each packet. If it stays
+unavailable at every sample for 90 s while associated, the transport stops and
+restarts through the normal 5–60 s backoff. The RX buffer is not watched: the
+wedge does not hold it, and a handler legitimately keeps it while it works,
+including during OTA flash writes. Restarting recreates the radio drivers,
+embassy-net and every socket. Sessions and subscriptions survive, so a second
+wedge without 15 minutes of continuous local network health in between resets
+the MCU. Wall time is not used, because a Wi-Fi outage after a restart is not
+evidence that the restart worked. The reset uses the same verified-zero,
+intent-preserving path as console `reboot`. It first waits up to 60 s for the
+saved record to hold the accepted target. A running fade does not delay it,
+because boot fades to the saved target. If saving never succeeds (a storage
+fault holding an unsaved command), the transport restarts in place instead,
+and the next wedge tries again. Nothing limits how often a lamp that keeps
+wedging resets; `matter_wedges` and the log show it.
+
+Key Right differs from Stillair in three ways. A reset may happen while the
+lamp is On: the cost is a dark gap and a fade back to the saved state, while
+the alternative is a light nobody can control. There is no 10-minute off-Wi-Fi
+rule: the 30-second radio deadlines and the 60-second association and IPv6
+checks already recreate a stuck connection. There is no `custom-halt`: the
+15-second MWDT has stage 0 set to `ResetSystem`, and a panic stops it being
+fed, so a panic already resets within 15 s. An interrupted OTA upload needs no
+reset either. Key Right never refuses `Begin`, so `esp-ota` resumes or restarts
+the upload on the new stack.
+
+`status` reports `matter_wedges`, the count since boot. `test matter` holds the
+TX buffer from inside the watchdog until the transport restarts. It exercises
+detection, restart and escalation, not the smoltcp cause.
+
 Boot partition/credential/Matter/scene operations retry adapter-reported
 `StdIoError` with 5–60-second capped backoff. One-second async waits feed the
 watchdog and permit USB logging. Firmware requests no erase or factory reset
@@ -448,8 +495,9 @@ reads. Tests establish logical fabric preservation, not identical physical NVS
 bytes. Malformed application/Matter records detected by decoding remain faults.
 
 On a commissioned board, `test wifi` requests a real station disconnect and
-normal reconnection; `test network` recreates the complete transport. Neither
-unpairs the board. Observe recovery through status and Home, including unchanged
+normal reconnection; `test network` recreates the complete transport;
+`test matter` holds the Matter TX buffer until the watchdog restarts the
+transport about 90 s later. None of them unpairs the board. Observe recovery through status and Home, including unchanged
 intent and fabrics. `test watchdog` requires settled, verified output and stalls
 the firmware task until the 15-second watchdog resets it. The PCA retains its
 previous frame during that stall; this is a recovery check, not an Off command.

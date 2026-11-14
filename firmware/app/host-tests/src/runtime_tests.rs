@@ -818,3 +818,26 @@ fn local_network_deadline_ignores_absent_ap_and_accepts_ipv6_without_dhcp() {
     assert!(!health.restart_due(3_660_001, true, true));
     assert!(!health.restart_due(4_000_000, true, true));
 }
+
+#[test]
+fn recovery_reset_waits_only_for_the_accepted_target_to_be_saved() {
+    let (h, r) = rig();
+    r.tick(0);
+    assert!(r.reboot_ready());
+    r.set_power(true).unwrap();
+    // Mid-fade is fine: the saved record already holds On, and boot fades to it.
+    assert!(r.reboot_ready());
+    r.tick(400);
+    h.fail_store.set(true);
+    assert!(r.set_power(false).is_err());
+    r.tick(10_000);
+    assert!(
+        !r.reboot_ready(),
+        "a reset would restore On instead of the accepted Off"
+    );
+    h.fail_store.set(false);
+    r.tick(20_000);
+    assert!(r.reboot_ready());
+    r.prepare_reboot();
+    assert!(!r.reboot_ready());
+}
